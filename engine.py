@@ -1,6 +1,6 @@
-"""Difference Guard Boundary Lab v1.0 — non-generative image restoration.
+"""Stable Shift v2.0 — non-generative image restoration.
 
-Separated into a compact engine/UI for experimentation. Allows different-sized references in Restore Quality; the images should depict aligned content. No changes to Forge or other DG versions.
+The reference supplies palette information only in Restore Quality. Structural analysis and optional V2 surface cleanup use the edited/denoised image. No Forge hooks.
 """
 from __future__ import annotations
 from dataclasses import dataclass
@@ -12,8 +12,11 @@ from PIL import Image
 
 @dataclass
 class Options:
-    method: str='BM3D (optional)'  # BM3D, NLM, Boundary-constrained diffusion
+    method: str='CPU BM3D'  # Explicit CPU/GPU BM3D, V2 surface-only, or legacy methods
     cleanup: float=0.0
+    cleanup_range: float=12.0
+    cleanup_luma: float=60.0
+    cleanup_radius: int=16
     noise: float=55.0
     color_noise: float=55.0
     hard_guard: float=95.0
@@ -194,8 +197,8 @@ def _palette(clean, restored):
 
 def _restore_quality_base(clean:Image.Image, edited:Image.Image, opts:Options, diagnostics=True):
     raw=array(edited)
-    # The clean image can be any size. For matched-content restoration,
-    # resize using Lanczos to the EDITED image dimensions; never resize output.
+    # Reference geometry never guides restoration. Palette matching alone uses
+    # the clean image; output dimensions always follow the edited image.
     maps=structure_maps(edited,None,opts.shade_threshold)
     if opts.method=='NLM':
         candidate=_nlm(raw,opts.noise,opts.color_noise)
@@ -206,11 +209,11 @@ def _restore_quality_base(clean:Image.Image, edited:Image.Image, opts:Options, d
         candidate=_bm3d(raw,opts.noise,opts.color_noise)
     elif opts.method=='GPU BM3D':
         candidate=_gpu_bm3d(raw,opts.noise,opts.color_noise)
-    elif opts.method=='Color only':
+    elif opts.method in ('Color only','Region cleanup only'):
         candidate=raw.copy()
     else:
         raise ValueError(f'Unknown method {opts.method}')
-    if opts.method in ('Boundary constrained','Color only'):
+    if opts.method in ('Boundary constrained','Color only','Region cleanup only'):
         # Internal barrier already controlled smoothing. Do NOT blend in source
         # pixels afterward, which would undo the user's requested behavior.
         result=candidate
@@ -270,51 +273,26 @@ def _gpu_bm3d(rgb, noise, color_noise):
         raise RuntimeError('GPU BM3D could not run. No CPU fallback was performed. Select CPU BM3D or inspect GPU installation/driver compatibility. Details: '+str(exc)) from exc
 
 
-def chroma_cleanup(rgb, strength, maps):
-    """Conservative chroma diffusion; original luminance stays fixed in LAB.
-
-    Guidance comes exclusively from the edited/denoised image. No reference detail
-    is transferred. This suppresses variation, not a semantic blotch classifier.
-    """
-    amount=float(np.clip(strength/100.,0,1))
-    if amount==0:return rgb.copy(),np.zeros(rgb.shape[:2],np.float32)
-    lab=_lab(rgb); ab=lab[:,:,1:].copy()
-    guide=cv2.GaussianBlur(lab,(0,0),1.0)
-    barrier=np.maximum(maps['hard'],maps['soft']*.8)
-    def weights(a,b,edge):
-        delta=a-b
-        return (np.exp(-(delta[:,:,0]/3.)**2-np.sum(delta[:,:,1:]**2,axis=2)/36.)*(1-edge)**3).astype(np.float32)
-    wh=weights(guide[:,1:],guide[:,:-1],np.maximum(barrier[:,1:],barrier[:,:-1]))
-    wv=weights(guide[1:],guide[:-1],np.maximum(barrier[1:],barrier[:-1]))
-    for _ in range(6):
-        update=np.zeros_like(ab)
-        h=(ab[:,1:]-ab[:,:-1])*wh[:,:,None]
-        v=(ab[1:]-ab[:-1])*wv[:,:,None]
-        update[:,:-1]+=h;update[:,1:]-=h;update[:-1]+=v;update[1:]-=v
-        ab+=update*(.20*amount)
-    change=ab-lab[:,:,1:]
-    # Cap the correction to avoid aggressive flattening of colored detail.
-    lab[:,:,1:]+=np.clip(change,-2.5*amount,2.5*amount)
-    out=np.uint8(np.clip(cv2.cvtColor(lab,cv2.COLOR_LAB2RGB)*255+.5,0,255))
-    return out,np.linalg.norm(change,axis=2)/4.
-
-
-def restore_quality(clean, edited, opts, diagnostics=True):
+def restore_quality(clean, edited, opts, diagnostics=True, progress=None):
     from time import perf_counter
     from dataclasses import replace, asdict
+    from region_cleanup import surface_cleanup, RegionOptions
     start=perf_counter()
+    region_options=RegionOptions(opts.cleanup, opts.cleanup_range, opts.cleanup_luma, opts.cleanup_radius).validated()
+    if progress:progress('Denoising / analysis: '+opts.method)
     out,maps=_restore_quality_base(clean,edited,replace(opts,color_match=False),diagnostics=False)
     denoised=perf_counter()
-    cleanup_maps=structure_maps(out,None,opts.shade_threshold) if opts.cleanup>0 else maps
-    rgb,cleanup_map=chroma_cleanup(array(out),opts.cleanup,cleanup_maps)
+    rgb,region_maps,region_report=surface_cleanup(array(out),region_options,diagnostics,progress)
+    maps.update(region_maps)
     cleaned=perf_counter()
+    if progress:progress('Reference color correction' if opts.color_match else 'Finishing')
     if opts.color_match:rgb=_palette(clean,rgb)
     finished=perf_counter()
     if diagnostics:
-        maps['cleanup']=cleanup_map
         maps['difference']=np.mean(np.abs(rgb.astype(np.float32)-array(edited).astype(np.float32)),axis=2)/70
-    maps['report']={'backend':opts.method,'resolution':list(edited.size),
+    maps['report']={'version':'2.0','backend':opts.method,'resolution':list(edited.size),
         'denoise_and_analysis_seconds':denoised-start,'cleanup_seconds':cleaned-denoised,
         'color_seconds':finished-cleaned,'total_seconds':finished-start,
-        'cleanup_strength':opts.cleanup,'color_match':opts.color_match,'options':asdict(opts)}
+        'cleanup_strength':opts.cleanup,'color_match':opts.color_match,'options':asdict(opts),
+        'region_cleanup':region_report}
     return Image.fromarray(rgb),maps

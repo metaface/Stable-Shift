@@ -2,3 +2,5 @@
 __pycache__/
 .pytest_cache/
 *.pyc
+startup.log
+stable_shift_v2_*/

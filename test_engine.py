@@ -67,7 +67,9 @@ def test_boundary_constraint():
 def test_output_from_real_image():
     from pathlib import Path
     p=Path('/mnt/data/00000-2652902711(1).png')
-    if not p.exists():return
+    if not p.exists():
+        import pytest
+        pytest.skip('Historical real-image fixture is not available in this environment.')
     original=Image.open(p).convert('RGB').resize((640,640),Image.Resampling.LANCZOS)
     small=original.resize((320,320),Image.Resampling.LANCZOS)
     # Real illustration; reference is half the edited resolution.
