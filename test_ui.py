@@ -94,6 +94,13 @@ def test_ui_worker_save_and_actual_run_settings(tmp_path, monkeypatch):
         assert output.exists()
         saved = json.loads(output.with_suffix('.settings.json').read_text())
         assert saved['options']['cleanup'] == 75
+        maps_folder = tmp_path / 'maps'
+        maps_folder.mkdir()
+        monkeypatch.setattr(filedialog, 'askdirectory', lambda **kwargs: str(maps_folder))
+        app.save_maps()
+        assert (maps_folder / 'diagnostics_raw.npz').exists()
+        assert (maps_folder / 'source_line_core.png').exists()
+        assert (maps_folder / 'MAP_LEGEND.md').exists()
         assert app.set_image('edited', path)
         assert app.result is None  # No stale output after replacing an input.
     finally:

@@ -6,7 +6,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageOps, ImageDraw
 
-from engine import restore_quality, heatmap
+from engine import restore_quality
+from stage_maps import save_diagnostics
 
 
 def comparison_plan(options):
@@ -14,14 +15,16 @@ def comparison_plan(options):
         raise ValueError('Set Surface cleanup above 0 before comparing cleanup variants.')
     if options.method in ('Region cleanup only', 'Color only'):
         return [
-            ('01_color_only', replace(options, method='Color only', cleanup=0)),
+            ('01_color_only', replace(options, method='Color only', cleanup=0, source_guard=False)),
             ('02_surface_only', replace(options, method='Region cleanup only')),
         ]
-    return [
-        ('01_denoiser_only', replace(options, cleanup=0)),
-        ('02_denoiser_plus_surface', options),
-        ('03_surface_only', replace(options, method='Region cleanup only')),
-    ]
+    runs = [('01_denoiser_only', replace(options, cleanup=0, source_guard=False))]
+    if options.source_guard:
+        runs.append(('02_denoiser_source_lines', replace(options, cleanup=0)))
+    runs += [('03_denoiser_plus_surface', options),
+             ('04_surface_only', replace(options, method='Region cleanup only'))]
+    return runs
+
 
 
 def export_comparison(clean, edited, options, directory, progress=None):
@@ -41,9 +44,7 @@ def export_comparison(clean, edited, options, directory, progress=None):
         reports.append({'name': name, **report})
         (directory / (name + '.json')).write_text(json.dumps(report, indent=2), encoding='utf-8')
         outputs.append((name, out))
-        for key, field in maps.items():
-            if key.startswith('v2_') and isinstance(field, np.ndarray):
-                heatmap(field).save(directory / (name + '_' + key + '.png'))
+        save_diagnostics(maps, directory, prefix=name+'_')
     tiles = []
     for name, im in [('Color reference', clean)] + outputs:
         thumb = ImageOps.contain(im, (480, 480), Image.Resampling.LANCZOS)
@@ -67,7 +68,7 @@ def export_comparison(clean, edited, options, directory, progress=None):
             ImageDraw.Draw(tile).text((j * (size + 10) + 3, 8), name, fill='white')
         tile.save(directory / f'crop_{i}_x{left}_y{top}_100percent.png')
     (directory / 'settings_and_timings.json').write_text(json.dumps({
-        'version': '2.0', 'options': asdict(options),
+        'version': '2.1', 'options': asdict(options),
         'reference_size': list(clean.size), 'edited_size': list(edited.size),
         'runs': reports,
     }, indent=2), encoding='utf-8')

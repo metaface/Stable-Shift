@@ -53,7 +53,7 @@ def _distance2(a, b):
     return np.einsum('...c,...c->...', d, d, optimize=True)
 
 
-def boundary_graph(lab, color_range):
+def boundary_graph(lab, color_range, protected=None):
     """Fixed graph; a blocked link cannot pass samples at any neighborhood size.
 
     A softly filtered image is used ONLY to measure boundaries, never as the
@@ -61,6 +61,10 @@ def boundary_graph(lab, color_range):
     dark lines aren't dependent on surviving the guide filter.
     """
     h, w = lab.shape[:2]
+    if protected is not None:
+        protected = np.asarray(protected, dtype=bool)
+        if protected.shape != (h, w):
+            raise ValueError('Source protection and cleanup image dimensions must match.')
     guide = cv2.GaussianBlur(lab, (3, 3), .65, borderType=cv2.BORDER_REFLECT)
     guide_limit2 = max(2.5, color_range * .55) ** 2
     raw_limit2 = (color_range * 1.5) ** 2
@@ -82,6 +86,10 @@ def boundary_graph(lab, color_range):
                 count = cv2.filter2D(candidates.astype(np.float32), -1, kernel, borderType=cv2.BORDER_CONSTANT)
                 np.maximum(support, count, out=support)
             allowed = ~(candidates & (support >= 3))
+            if protected is not None:
+                # The original linked structure is a hard constraint, even if
+                # the denoised image no longer has a detectable local jump.
+                allowed &= ~(protected[a] | protected[b])
             gate[a] = allowed
             boundary[a] |= (~allowed).astype(np.uint8)
             boundary[b] |= (~allowed).astype(np.uint8)
@@ -105,7 +113,7 @@ def boundary_graph(lab, color_range):
 
 
 def surface_cleanup(rgb, options=RegionOptions(), diagnostics=True,
-                    progress: Callable[[str], None] | None = None):
+                    progress: Callable[[str], None] | None = None, protected=None):
     """Estimate compatible neighboring colors without traversing blocked links.
 
     Range weights compare each candidate directly with its target, as well as
@@ -121,7 +129,7 @@ def surface_cleanup(rgb, options=RegionOptions(), diagnostics=True,
     if options.strength == 0:
         return rgb.copy(), {}, {'changed_pixels_percent': 0.0, 'mean_rgb_change': 0.0}
     lab = cv2.cvtColor(rgb.astype(np.float32) / 255, cv2.COLOR_RGB2LAB)
-    links, boundary = boundary_graph(lab, options.color_range)
+    links, boundary = boundary_graph(lab, options.color_range, protected)
     eligible = boundary == 0
     broad = int(options.radius)
     radii = (min(2, broad), min(6, broad), broad)
