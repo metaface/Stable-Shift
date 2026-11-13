@@ -1,38 +1,48 @@
-# V2.0 validation
+# V2.1 validation
 
-## Automated checks
+## Checks
 
-`DISPLAY=:99 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python -m pytest -q`:
+Linux with a real Tk/tkdnd test display:
 
-**23 passed, 1 skipped.** The skipped check requires a historical real-image fixture that is not available in this executor; it is not counted as a real-image success.
+`DISPLAY=:99 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python -m pytest -q`
 
-Checks cover:
-- Legacy size handling, Preserve Edits registration safeguards, boundary denoising and actual CPU BM3D noise reduction.
-- Explicit GPU dependency failure without silent CPU fallback.
-- Cleanup off returns the input exactly before color correction.
-- Cleanup visibly changes synthetic low-amplitude variation and reduces error against synthetic ground truth.
-- A one-pixel window frame prevents samples mixing two otherwise similar surfaces.
-- Synthetic diagonal stitching and a sharp cel-shading boundary remain intact.
-- A broad neighborhood suppresses constructed broad chroma variation more than a fine-only neighborhood.
-- No structural dependence on the reference when palette matching is off, including differently sized references.
-- Separate luminance control, tiny image shapes and invalid-setting rejection.
-- Tcl file-list parsing for spaces, braces, Unicode, file URIs, multiple files and folder rejection.
-- Actual Tk/tkdnd-registered callback invocation loads each input independently, refuses replacements while busy, and respects theme changes.
-- GUI background processing and PNG/settings saving retain the actual run settings after sliders change.
-- Comparison PNGs, native crop sheets, diagnostic maps, sizes and per-run metadata.
+**31 passed, 1 skipped.** The skipped check requires a historical real-image fixture that is not available. GPU execution and Windows Explorer end-to-end drag/drop are not verified in this executor.
 
-## Desktop verification
+Retained checks cover actual CPU BM3D noise reduction, explicit GPU dependency failure, size/registration rules, reference independence, V2 cleanup, high-contrast and diagonal boundaries, native Tcl drop callbacks, filename parsing, GUI processing, themes, PNG saving and actual-settings export.
 
-A headless X server was started in the executor. The actual interface and native tkdnd 2.10.3 extension loaded with Tcl/Tk 9, and the layout was visually inspected in dark mode. Both Dark/Light preview backgrounds were exercised. The drop integration checks invoke the registered Tcl callbacks with native DnD arguments, not a physical drag from Windows Explorer. Windows Explorer end-to-end drops and Windows registry theme switching still need local testing.
+New regressions cover:
+- A faint long line can survive source linking without meeting the hard-seed threshold.
+- A featureless noisy surface is not mostly classified as protected linework.
+- The same original source core is used at the denoiser handoff and in cleanup. Protected source pixels remain exact before palette correction even when a controlled denoiser erases the line.
+- Carried source boundaries stop cross-surface sampling when cleanup's local image cannot detect the boundary.
+- Denoise + cleanup + palette signed residuals sum exactly to total change.
+- Palette-only changes produce zero cleanup residual, preventing total-change maps being misrepresented as noise maps.
+- Exported signed int16 arrays retain signs/values; binary protection PNGs use actual black/white values and have legends.
+- The comparison plan isolates legacy baseline, source-line protection and surface cleanup.
+- The actual GUI Save maps action exports raw arrays, source protection and legends.
 
-## Synthetic 2K processing
+## Actual CPU BM3D weak-line exercise
 
-A 2048×2048 two-surface image with a thin separating frame and added RGB noise was processed with V2 alone, strength 75, LAB range 12, luminance 60, radius 16 and diagnostics enabled:
+A 192×192 synthetic dark surface with three faint one-pixel horizontal lines, a stronger connected frame and a high-contrast light foreground was processed with actual CPU BM3D, both with and without source tracing. Legacy hard/soft guards were set to 0 in both runs to isolate the new protection; palette correction was off.
 
-- Cleanup time: 5.94 seconds.
-- Changed pixels: 99.08%.
-- Mean absolute RGB change: 1.70/255.
-- Protected pixels: 0.29%.
-- Peak process RSS: approximately 1.1 GiB, including synthetic generation.
+At the measured interior of the faint line, baseline mean absolute RGB error was 7/255; source tracing plus cleanup retained original line RGB exactly (0 error), with 100% traced coverage along that measured segment. This is a controlled synthetic regression, not a measurement on the user's cabin illustration.
 
-These figures establish execution and a nonzero cleanup effect; they do not measure restoration quality on the user's illustration. No claim is made that V2 beats BM3D on the supplied artwork. Original inline artwork is not available as a local image fixture in this executor. GPU BM3D is unchanged but was not executed here.
+## 2048×2048 execution
+
+A synthetic two-surface image with a separating line and RGB noise was processed in Region cleanup only mode using a half-sized reference, source tracing on, cleanup 60, LAB range 12, luminance 60 and radius 16. Palette correction was disabled:
+
+- Original source analysis/tracing: 1.28 s.
+- Denoiser handoff (no denoiser in this mode): 0.03 s.
+- Cleanup: 5.70 s.
+- Stage diagnostics: 0.32 s.
+- Total processing: 7.33 s, excluding file export and preview rendering.
+- Source core: 3.32% of pixels.
+- Peak process RSS: approximately 1.29 GiB, including synthetic generation and diagnostics.
+
+These are development-executor figures, not an RTX 5080 benchmark or a claim of superior restoration quality. Original inline artwork is not available locally as an image fixture. The original image remains the color reference only; no reference structure was used.
+
+## Desktop
+
+The V2.1 checkbox and dark preview layout were visually inspected under a test display with native tkdnd 2.10.3 and Tcl/Tk 9. The existing drag/drop bindings, background worker and Save maps flow were exercised. Windows registry theme detection and physical Explorer drops still require user testing.
+
+The CuPy CUDA-path warning is documented; no CUDA_PATH guessing or warning suppression was added. The BM3D adapters are unchanged.

@@ -1,4 +1,36 @@
-# Stable Shift V2.0 — standalone test build
+# Stable Shift V2.1 — standalone test build
+
+## V2.1 source-line correction
+
+Leave **Trace source lines before denoising and protect them through cleanup** on for the new behavior. Turning it off restores the V2.0 guard/cleanup behavior for comparison.
+
+The original edited image's hard and soft evidence is computed once, before denoising. Supported weaker segments can link to a strong seed or survive as a sufficiently long coherent line of their own. Directional continuity, a high-frequency scatter estimate and a small component filter reduce isolated grain. A one-pixel support band retains a stroke center between its detected sides.
+
+Those traced source pixels are kept at the denoiser handoff and the SAME mask is passed into the cleanup boundary graph. It closes sampling links even where the processed image's local gradient is now too weak. Source-protected pixels retain original edited RGB through denoising/cleanup, before final palette correction. This is not a semantic line/noise classifier; some real details can be missed and some noise can be preserved.
+
+The CPU/GPU BM3D implementations are unchanged and still do not accept a custom internal boundary map. New source preservation happens at their handoff, not within BM3D's patch processing. Internal boundary constraints apply to V2's own neighborhood sampling.
+
+With tracing on and a denoiser selected, Compare V2 now exports four runs: legacy baseline, source protection only, source protection plus surface cleanup, and protected surface cleanup alone. With tracing off it retains three runs. In Region cleanup only/Color only modes it retains the palette baseline and surface-only comparison. The same settings and color correction apply to every run, with only the named features changed. The original legacy hard/soft guard sliders remain active in the baseline; compare against identical V2.0 settings.
+
+## Reading the corrected maps
+
+Save maps and comparison exports now contain:
+
+- `source_line_core.png`: black/white actual source protection, not a weak colored confidence preview. White is preserved through the handoff and passed to cleanup.
+- `source_line_confidence`, `source_line_candidates`, `source_line_seeds`, `source_line_trace`: evidence and linking diagnostics.
+- `v2_boundaries.png`: actual cleanup exclusions, combining carried source lines with locally detected boundaries. White pixels are excluded from cleanup.
+- `denoise_change`, `cleanup_change`, `palette_change`, `total_change`: separate magnitudes, all at a fixed 0–16 RGB-level display range. The legacy `difference` key remains total change at its older 0–70 range; use the stage maps instead.
+- `diagnostics_raw.npz`: exact native-resolution arrays, including signed `denoise_signed_rgb`, `cleanup_signed_rgb`, `palette_signed_rgb` and `total_signed_rgb`. Values are int16 **after minus before**. The three stage residuals sum exactly to the total residual.
+- Signed previews: R/G/B channels shown separately, blue for negative, gray for zero and orange for positive, saturating at +/-16. Previews may be resized; raw arrays retain full values and resolution.
+- `MAP_LEGEND.png` / `.md`: units and map roles.
+
+Heatmap blue/green/red colors encode magnitudes, not the original color of a blotch. Total change includes global reference palette correction, so a bright region does not establish that all its variation is noise. Cleanup changes are measured before palette correction. The per-scale differences remain heuristic reconstruction evidence, not classified noise.
+
+Normal PNG Save still writes the actual run settings/timings JSON. Maps/NPZ are exported only through Save maps or Compare. Raw map exports can use substantial disk space at 2K/4K; export time is not included in each run's processing timer.
+
+## CuPy CUDA-path warning
+
+A console `UserWarning: CUDA path could not be detected` is not a traceback or an unfinished installation by itself. If GPU BM3D finishes, the adapter actually executed GPU operations and synchronized them; it did not silently run CPU BM3D. No guessed CUDA_PATH, driver install or blanket warning suppression is applied by V2.1. If GPU execution fails, retain the full error, since runtime/driver troubleshooting depends on that failure rather than this warning alone.
 
 ## Installation and drag/drop
 
@@ -19,9 +51,9 @@ A new extracted folder has its own `.venv`; optional CPU/GPU BM3D must be instal
 - **Color similarity range:** approximate LAB distance for compatible neighbors. Start at 12. Increasing to 16–20 accepts more variation but can also remove subtle real shading or texture. Lower it if details weaken. It also influences the automatic boundary threshold, so it is not simply a strength multiplier.
 - **Broad radius:** native-resolution sample reach, 2–32 pixels. Start at 16. Larger values can address wider variations; very broad contamination may remain. Smaller values are cheaper and more local.
 - **Reference color correction:** inherited global LAB matcher, applied last. V2 does not claim to solve its remaining cream-fur/muted-denim bias. Turn it off to isolate cleanup when evaluating maps or noise.
-- **Advanced / legacy:** reveals existing hard/soft guards and shading sensitivity for legacy denoisers, plus the unchanged Preserve Edits task. V2 has its own boundary graph controlled by color similarity; these legacy edge sliders do not control it.
+- **Advanced / legacy:** reveals existing hard/soft guards and shading sensitivity for legacy denoisers, plus the unchanged Preserve Edits task. V2 has its own boundary graph controlled by color similarity; the hard/soft legacy guard sliders do not control it. Original shading-boundary sensitivity also affects the source evidence used by V2.1 tracing.
 
-Select GPU BM3D and choose **Compare V2** with Surface cleanup above 0. It exports:
+Select GPU BM3D and choose **Compare V2** with Surface cleanup above 0. With source tracing off, the retained V2 comparison exports:
 
 1. Selected denoiser with V2 off.
 2. The same denoiser with the current V2 settings.
@@ -35,7 +67,7 @@ Inspect full-resolution PNGs and native-pixel crop sheets, particularly denim, s
 
 The image is never reduced to quarter/half size for V2. Instead, it estimates fine (up to radius 2), medium (up to 6) and broad (chosen radius) color fields independently on the full-resolution grid. This preserves the coarse-to-fine roles discussed without destroying thin lines through ordinary downsampling.
 
-1. Build horizontal/vertical boundary links from lightly guided color differences and strong native-resolution jumps. Require aligned support to avoid treating every isolated grain pixel as a line. Diagonal links cannot cut through closed horizontal/vertical corners. This is automatic local structure detection, not object segmentation.
+1. When tracing is on, carry the original source-line core into the graph. Also build horizontal/vertical boundary links from lightly guided color differences and strong native-resolution jumps. Require aligned support to avoid treating every isolated grain pixel as a line. Diagonal links cannot cut through closed horizontal/vertical corners. This is automatic local structure detection, not object segmentation.
 2. Sample in eight directions at a sparse set of distances. A candidate must be within the target pixel's LAB color range **and** the entire straight path to it must avoid blocked links. No chaining of nearby colors into a different surface is used.
 3. Form normalized, Tukey-weighted local surface estimates at all three scales. Protected boundary pixels are not eligible for correction.
 4. Reconstruct broad → medium difference → fine difference. Distance from boundaries selects how much finer information returns. It is a heuristic residual gate, not a learned noise/detail classifier.
@@ -51,7 +83,7 @@ Live elapsed time and completed per-stage timings remain. Save PNG also saves it
 
 GPU BM3D uses `bm3d-cupy[cuda12]==0.1.3`; CPU BM3D uses `bm3d==4.0.3`. The V2 cleanup itself runs on CPU NumPy/OpenCV and is timed separately. A synthetic 2048×2048 cleanup run at strength 75, LAB range 12, lightness 60 and radius 16 took about 5.94 seconds in the development executor, with approximately 1.1 GiB peak process memory including synthetic-image generation and diagnostics. This is not a benchmark of your RTX 5080 or real image.
 
-The GPU adapter is unchanged from the version you tested successfully. GPU execution is not available in this development environment. If it fails, the app reports the error and leaves CPU BM3D available; it does not silently fall back. No neural model, semantic restoration, negative-clarity luminance model, Forge integration or Preserve Edits mask improvement was added.
+The GPU adapter is unchanged from the version you tested successfully. V2.1 adds original-source analysis and separate diagnostic timing to the processing report. GPU execution is not available in this development environment. If it fails, the app reports the error and leaves CPU BM3D available; it does not silently fall back. No neural model, semantic restoration, negative-clarity luminance model, Forge integration or Preserve Edits mask improvement was added.
 
 System/Dark/Light themes are retained. On Windows System follows AppsUseLightTheme; other systems default to dark if detection is unavailable. Native dialogs use the OS's own theme.
 

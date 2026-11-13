@@ -15,7 +15,7 @@ from tkinter import ttk, filedialog, messagebox
 
 from PIL import Image, ImageTk, ImageOps
 
-from engine import Options, restore_quality, preserve_edits, heatmap
+from engine import Options, restore_quality, preserve_edits
 from image_inputs import drop_path, load_image
 
 try:
@@ -38,7 +38,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.0 — Surface Cleanup Lab')
+        root.title('Stable Shift V2.1 — Surface Cleanup Lab')
         root.geometry('1400x940')
         root.minsize(1040, 760)
         self.images = {'clean': None, 'edited': None}
@@ -56,6 +56,7 @@ class App:
         self.method = tk.StringVar(value=default_method())
         self.theme = tk.StringVar(value='System')
         self.palette = tk.BooleanVar(value=True)
+        self.source_guard = tk.BooleanVar(value=True)
         self.noise = tk.DoubleVar(value=50)
         self.chroma = tk.DoubleVar(value=55)
         self.cleanup = tk.DoubleVar(value=60)
@@ -114,13 +115,14 @@ class App:
         ttk.Label(radius_frame, text='Broad neighborhood radius (pixels)').pack(anchor='w')
         ttk.Spinbox(radius_frame, from_=2, to=32, width=7, textvariable=self.cleanup_radius).pack(side='left')
         ttk.Label(radius_frame, text='  Full-resolution sampling').pack(side='left')
-        ttk.Label(controls, text='Compare V2 exports: selected denoiser alone / + surface cleanup / surface cleanup alone.').pack(anchor='w', pady=(6, 0))
+        ttk.Checkbutton(controls, text='Trace source lines before denoising and protect them through cleanup', variable=self.source_guard).pack(anchor='w', pady=(5, 0))
+        ttk.Label(controls, text='Compare V2: baseline / + source lines / + surface cleanup / surface cleanup alone.').pack(anchor='w', pady=(3, 0))
         self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
         ag = ttk.Frame(self.advanced)
         ag.pack(fill='x')
         self._scale(ag, 'Hard edge guard (legacy denoisers)', self.hard, 0, 100, 0, 0)
         self._scale(ag, 'Soft edge guard (legacy denoisers)', self.soft, 0, 100, 0, 1)
-        self._scale(ag, 'Legacy shading sensitivity', self.shade, 0, 100, 0, 2)
+        self._scale(ag, 'Original shading-boundary sensitivity', self.shade, 0, 100, 0, 2)
         taskrow = ttk.Frame(self.advanced)
         taskrow.pack(fill='x', pady=4)
         ttk.Label(taskrow, text='Task:').pack(side='left')
@@ -280,7 +282,7 @@ class App:
                        hard_guard=self.hard.get(), soft_guard=self.soft.get(), shade_threshold=self.shade.get(),
                        color_match=self.palette.get(), edit_sensitivity=self.edit.get(), cleanup=self.cleanup.get(),
                        cleanup_range=self.cleanup_range.get(), cleanup_luma=self.cleanup_luma.get(),
-                       cleanup_radius=self.cleanup_radius.get())
+                       cleanup_radius=self.cleanup_radius.get(), source_guard=self.source_guard.get())
 
     def snapshot(self):
         if self.images['edited'] is None:
@@ -392,7 +394,7 @@ class App:
                     parts += [f'{key.removesuffix("_seconds")}: {value:.2f}s' for key, value in report.items() if key.endswith('_seconds')]
                     self.result_info.set(' | '.join(parts))
                     region = report.get('region_cleanup', {})
-                    self.status.set(f'Finished. Surface cleanup changed {region.get("changed_pixels_percent", 0):.1f}% of pixels; mean RGB change {region.get("mean_rgb_change", 0):.2f}/255. Save maps or compare native-resolution crops.')
+                    self.status.set(f'Finished. Source lines protected {report.get("source_protected_pixels_percent", 0):.1f}% | Cleanup changed {region.get("changed_pixels_percent", 0):.1f}%; mean RGB change {region.get("mean_rgb_change", 0):.2f}/255. Compare native-resolution crops.')
                     self.schedule_redraw()
                 elif kind == 'compared':
                     directory, reports = data
@@ -428,16 +430,13 @@ class App:
         directory = filedialog.askdirectory(title='Save diagnostic maps')
         if not directory:
             return
-        import numpy as np
         try:
-            count = 0
-            for name, value in self.maps.items():
-                if isinstance(value, np.ndarray) and value.ndim == 2:
-                    heatmap(value / 18 if name == 'distance' else value).save(Path(directory) / (name + '.png'))
-                    count += 1
-            self.status.set(f'Saved {count} diagnostic maps.')
+            from stage_maps import save_diagnostics
+            count = save_diagnostics(self.maps, directory)
+            self.status.set(f'Saved {count} map previews, signed raw arrays and MAP_LEGEND.')
         except Exception as exc:
             messagebox.showerror('Save maps', str(exc))
+
 
 
 def main():
