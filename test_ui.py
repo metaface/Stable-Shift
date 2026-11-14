@@ -140,7 +140,7 @@ def test_ui_blotch_comparison_worker_and_strength(tmp_path, monkeypatch):
         close_app(root)
 
 
-def test_ui_compare_lines_button_exports_both_variants_and_share_archive(tmp_path, monkeypatch):
+def test_ui_compare_auto_button_exports_both_variants_and_share_archive(tmp_path, monkeypatch):
     import json
     from app import filedialog, messagebox
     from test_faint_lines import faint_stroke
@@ -154,6 +154,8 @@ def test_ui_compare_lines_button_exports_both_variants_and_share_archive(tmp_pat
         Image.fromarray(faint_stroke()[0]).save(path)
         app.set_image('clean', path)
         app.set_image('edited', path)
+        assert app.automatic.get() is True
+        assert app.opts().faint_continuity is False
         app.method.set('Region cleanup only')
         app.cleanup.set(100)
         app.blotch_strength.set(100)
@@ -162,19 +164,22 @@ def test_ui_compare_lines_button_exports_both_variants_and_share_archive(tmp_pat
             for child in widget.winfo_children():
                 yield child
                 yield from descendants(child)
-        button = next(w for w in descendants(root) if w.winfo_class() == 'TButton' and w.cget('text') == 'Compare lines')
+        button = next(w for w in descendants(root) if w.winfo_class() == 'TButton' and w.cget('text') == 'Compare auto')
         button.invoke()
         deadline = time.monotonic()+15
         while app.busy and time.monotonic() < deadline:
             root.update()
             time.sleep(.01)
         assert not app.busy
-        folder, = tmp_path.glob('line_test_v25_*')
-        saved = json.loads((folder/'line_settings_and_timings.json').read_text())
-        assert saved['shared_denoiser_ran_once'] is True
-        assert saved['baseline']['options']['faint_continuity'] is False
-        assert saved['continued']['options']['faint_continuity'] is True
-        assert (folder/'share_line_test.zip').exists()
-        assert 'Existing protected pixels changed: 0' in app.result_info.get()
+        folder, = tmp_path.glob('auto_test_v26_*')
+        saved = json.loads((folder/'auto_settings_and_timings.json').read_text())
+        assert saved['manual']['options']['auto_strength'] is False
+        assert saved['automatic']['options']['auto_strength'] is True
+        assert saved['manual']['options']['faint_continuity'] is False
+        assert saved['automatic']['options']['faint_continuity'] is False
+        assert saved['source_protection_check']['changed_after_palette'] == 0
+        assert (folder/'share_auto_test.zip').exists()
+        assert (folder/'03_auto_same_palette.png').exists()
+        assert 'Auto:' in app.result_info.get()
     finally:
         close_app(root)

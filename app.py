@@ -38,7 +38,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.5 — Faint Line Test')
+        root.title('Stable Shift V2.6 — Automatic Strength Test')
         root.geometry('1400x940')
         root.minsize(1040, 760)
         self.images = {'clean': None, 'edited': None}
@@ -57,11 +57,12 @@ class App:
         self.theme = tk.StringVar(value='System')
         self.palette = tk.BooleanVar(value=True)
         self.source_guard = tk.BooleanVar(value=True)
-        self.noise = tk.DoubleVar(value=50)
-        self.chroma = tk.DoubleVar(value=55)
-        self.cleanup = tk.DoubleVar(value=60)
-        self.blotch_strength = tk.DoubleVar(value=70)
-        self.cleanup_luma = tk.DoubleVar(value=60)
+        self.automatic = tk.BooleanVar(value=True)
+        self.noise = tk.DoubleVar(value=100)
+        self.chroma = tk.DoubleVar(value=100)
+        self.cleanup = tk.DoubleVar(value=100)
+        self.blotch_strength = tk.DoubleVar(value=100)
+        self.cleanup_luma = tk.DoubleVar(value=100)
         self.cleanup_range = tk.DoubleVar(value=12)
         self.cleanup_radius = tk.IntVar(value=16)
         self.hard = tk.DoubleVar(value=100)
@@ -85,8 +86,8 @@ class App:
             button.pack(side='left', padx=(0, 7))
             self.open_buttons[key] = button
         ttk.Button(toolbar, text='Run / Preview', command=self.run).pack(side='right')
-        ttk.Button(toolbar, text='Compare lines', command=self.compare_lines).pack(side='right', padx=7)
-        ttk.Button(toolbar, text='Legacy comparison', command=self.compare).pack(side='right', padx=7)
+        ttk.Button(toolbar, text='Compare auto', command=self.compare_auto).pack(side='right', padx=7)
+        ttk.Button(toolbar, text='Legacy manual', command=self.compare).pack(side='right', padx=7)
         ttk.Button(toolbar, text='Save PNG + timings', command=self.save).pack(side='right', padx=7)
         ttk.Button(toolbar, text='Save maps', command=self.save_maps).pack(side='right', padx=7)
         ttk.Label(main, textvariable=self.file_info).grid(row=1, column=0, sticky='ew', pady=(0, 6))
@@ -99,6 +100,7 @@ class App:
         ttk.Combobox(row, textvariable=self.method, state='readonly', width=22, values=[
             'GPU BM3D', 'CPU BM3D', 'Region cleanup only', 'NLM', 'Boundary constrained', 'Color only'
         ]).pack(side='left', padx=7)
+        ttk.Checkbutton(row, text='Automatic strength', variable=self.automatic).pack(side='left', padx=6)
         ttk.Checkbutton(row, text='Reference color correction (last)', variable=self.palette).pack(side='left', padx=10)
         ttk.Label(row, text='Theme:').pack(side='left', padx=(12, 0))
         theme = ttk.Combobox(row, textvariable=self.theme, state='readonly', width=8, values=['System', 'Dark', 'Light'])
@@ -120,8 +122,8 @@ class App:
         ttk.Checkbutton(controls, text='Trace source lines before denoising and protect them through cleanup', variable=self.source_guard).pack(anchor='w', pady=(5, 0))
         broadrow = ttk.Frame(controls)
         broadrow.pack(fill='x', pady=5)
-        self._scale(broadrow, 'Broad correction maximum (local Auto; 0 = off)', self.blotch_strength, 0, 100, 0, 0)
-        ttk.Label(broadrow, text='Current test: Compare lines holds cleanup settings and palette fixed.').grid(row=0, column=1, padx=10, sticky='w')
+        self._scale(broadrow, 'Broad correction maximum (0 = off)', self.blotch_strength, 0, 100, 0, 0)
+        ttk.Label(broadrow, text='Sliders are ceilings in Auto. Compare auto holds the color correction field fixed.').grid(row=0, column=1, padx=10, sticky='w')
         self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
         ag = ttk.Frame(self.advanced)
         ag.pack(fill='x')
@@ -288,7 +290,7 @@ class App:
                        color_match=self.palette.get(), edit_sensitivity=self.edit.get(), cleanup=self.cleanup.get(),
                        cleanup_range=self.cleanup_range.get(), cleanup_luma=self.cleanup_luma.get(),
                        cleanup_radius=self.cleanup_radius.get(), source_guard=self.source_guard.get(),
-                       blotch_strength=self.blotch_strength.get())
+                       blotch_strength=self.blotch_strength.get(), auto_strength=self.automatic.get())
 
     def snapshot(self):
         if self.images['edited'] is None:
@@ -356,6 +358,31 @@ class App:
             try:
                 reports = export_comparison(clean, edited, opts, directory, self.progress)
                 self.queue.put(('compared', (directory, reports)))
+            except Exception as exc:
+                self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
+    def compare_auto(self):
+        if self.busy:
+            return
+        if self.mode.get() != 'Restore Quality':
+            messagebox.showinfo('Compare auto', 'This comparison is for Restore Quality.')
+            return
+        try:
+            clean, edited, opts = self.snapshot()
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Inputs/settings', str(exc))
+            return
+        parent = filedialog.askdirectory(title='Choose parent folder for a new automatic comparison')
+        if not parent:
+            return
+        directory = Path(parent) / datetime.now().strftime('auto_test_v26_%Y%m%d_%H%M%S_%f')
+        self.begin('Comparing manual and automatic strengths; backend settings are tested separately')
+        def worker():
+            try:
+                from auto_comparison import export_auto_comparison
+                summary = export_auto_comparison(clean, edited, opts, directory, self.progress)
+                self.queue.put(('auto_compared', (directory, summary)))
             except Exception as exc:
                 self.queue.put(('error', (str(exc), traceback.format_exc())))
         Thread(target=worker, daemon=True).start()
@@ -451,6 +478,8 @@ class App:
                     self.result, self.maps = data
                     report = self.maps['report']
                     parts = [report['backend']]
+                    if report.get('automatic_strength', {}).get('enabled'):
+                        parts.append(self.auto_description(report['automatic_strength']))
                     parts += [f'{key.removesuffix("_seconds")}: {value:.2f}s' for key, value in report.items() if key.endswith('_seconds')]
                     self.result_info.set(' | '.join(parts))
                     region = report.get('broad_normalization', report.get('region_cleanup', {}))
@@ -473,6 +502,11 @@ class App:
                     self.status.set('Line comparison saved: '+str(directory)+share)
                     check = summary['line_preservation_check']
                     self.result_info.set(f'Shared denoise: {summary["shared_denoise_seconds"]:.2f}s | Added protected pixels: {check["additional_protected_pixels"]} | Existing protected pixels changed: {check["v24_core_changed_after_palette"]}')
+                elif kind == 'auto_compared':
+                    directory, summary = data
+                    share = ' | Share: '+summary['share_zip'] if summary['share_zip'] else ''
+                    self.status.set('Automatic comparison saved: '+str(directory)+share)
+                    self.result_info.set(f'Manual: {summary["manual"]["total_seconds"]:.2f}s | Auto: {summary["automatic"]["total_seconds"]:.2f}s | '+self.auto_description(summary['automatic']['automatic_strength']))
                 elif kind == 'installed':
                     self.status.set(data)
                 elif kind == 'error':
@@ -481,6 +515,16 @@ class App:
         except Empty:
             pass
         self.root.after(100, self.poll)
+
+    @staticmethod
+    def auto_description(report):
+        if report.get('backend_skipped'):
+            fine = 'fine denoising skipped'
+        elif report['effective_noise'] == 0 and report['effective_color_noise'] == 0:
+            fine = 'fine denoise at backend minimum'
+        else:
+            fine = f'fine L {report["effective_noise"]:.0f}, C {report["effective_color_noise"]:.0f}'
+        return f'Auto: {fine}; surface limits L {report["mean_luminance_surface_permission_percent"]:.0f}%, C {report["mean_chroma_surface_permission_percent"]:.0f}%'
 
     def save(self):
         if self.result is None:

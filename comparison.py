@@ -28,6 +28,7 @@ def comparison_plan(options):
 
 
 def export_comparison(clean, edited, options, directory, progress=None):
+    options = replace(options, auto_strength=False)
     plan = comparison_plan(options)
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -68,7 +69,7 @@ def export_comparison(clean, edited, options, directory, progress=None):
             ImageDraw.Draw(tile).text((j * (size + 10) + 3, 8), name, fill='white')
         tile.save(directory / f'crop_{i}_x{left}_y{top}_100percent.png')
     (directory / 'settings_and_timings.json').write_text(json.dumps({
-        'version': '2.5', 'options': asdict(options),
+        'version': '2.6', 'options': asdict(options),
         'reference_size': list(clean.size), 'edited_size': list(edited.size),
         'runs': reports,
     }, indent=2), encoding='utf-8')
