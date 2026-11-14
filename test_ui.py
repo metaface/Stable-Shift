@@ -171,7 +171,7 @@ def test_ui_compare_auto_button_exports_both_variants_and_share_archive(tmp_path
             root.update()
             time.sleep(.01)
         assert not app.busy
-        folder, = tmp_path.glob('auto_test_v26_*')
+        folder, = tmp_path.glob('auto_test_v27_*')
         saved = json.loads((folder/'auto_settings_and_timings.json').read_text())
         assert saved['manual']['options']['auto_strength'] is False
         assert saved['automatic']['options']['auto_strength'] is True

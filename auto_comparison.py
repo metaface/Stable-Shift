@@ -58,10 +58,10 @@ def export_auto_comparison(clean, edited, options, directory, progress=None):
     auto_core = auto_maps.get('source_line_core', np.zeros(source.shape[:2])) > .5
     common = manual_core & auto_core
     summary = {
-        'version': '2.6', 'options': asdict(options),
-        'comparison': 'Same source, manual ceilings versus automatic fine strengths and surface limits',
+        'version': '2.7', 'options': asdict(options),
+        'comparison': 'Same source, manual ceilings versus multiscale automatic candidate strengths and spatial limits',
         'manual': manual_maps['report'], 'automatic': auto_maps['report'],
-        'denoiser_note': 'Different estimated strengths require separate backend runs. Automatic can skip negligible fine noise.',
+        'denoiser_note': 'Different candidate strengths require separate backend runs. Automatic skips only when native and eligible coarse cues do not justify denoising.',
         'palette': 'Same frozen manual-baseline field for both' if options.color_match else 'Off for both',
         'paired_palette_seconds': palette_seconds,
         'processing_seconds': perf_counter()-started,
@@ -90,6 +90,8 @@ def export_auto_comparison(clean, edited, options, directory, progress=None):
         save_diagnostics(maps, directory, prefix=prefix)
         candidate = np.uint8(source.astype(np.int16)+maps['unprotected_denoise_signed_rgb'])
         Image.fromarray(candidate).save(directory/(prefix+'raw_denoiser.png'))
+    controlled = np.uint8(source.astype(np.int16)+auto_maps['denoise_signed_rgb'])
+    Image.fromarray(controlled).save(directory/'auto_controlled_denoiser.png')
     sheet = Image.new('RGB', (2000, 525), '#202124')
     for i, (_, title, rgb) in enumerate(views):
         thumbnail = ImageOps.contain(Image.fromarray(rgb), (480, 480), Image.Resampling.LANCZOS)
@@ -106,8 +108,8 @@ def export_auto_comparison(clean, edited, options, directory, progress=None):
             ImageDraw.Draw(crop).text((i*(size+10)+2, 8), title, fill='white')
         crop.save(directory/f'auto_crop_{number}_x{left}_y{top}_100percent.png')
     names = [name for name, _, _ in views]+['edited_source.png', 'source_protection.png']
-    optional = ['color_reference.png', 'auto_auto_luminance_strength.png',
-        'auto_auto_chroma_strength.png', 'manual_raw_denoiser.png', 'auto_raw_denoiser.png']
+    optional = ['color_reference.png', 'auto_raw_denoiser.png', 'auto_controlled_denoiser.png',
+        'auto_auto_luminance_strength.png', 'auto_auto_chroma_strength.png', 'manual_raw_denoiser.png']
     size = sum((directory/name).stat().st_size for name in names)+100_000
     omitted = []
     if size < 30*1024*1024:

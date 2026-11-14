@@ -1,57 +1,67 @@
-# V2.6 validation
+# V2.7 validation
 
-## Scope
+## Problem reproduced
 
-V2.6 adds a source-only strength controller around the existing backend and surface candidates. The source tracer defaults to the accepted V2.4 behavior again (`faint_continuity=False`). V2.5 continuation remains available to API/legacy tests. Palette estimation, local cleanup, broad normalization and Preserve Edits algorithms are retained.
+The supplied V2.6 share export used GPU BM3D with all strength ceilings 100, similarity range 40 and radius 16. Its automatic controller measured native LAB scatter of approximately 0.190 / 0.293 / 0.255, selected denoiser strengths 0/0 and skipped BM3D. Actual local and broad mean changes were only 0.389 and 0.357 RGB levels. The grid was present before palette correction; the manual output suppressed it much more strongly.
 
-`region_cleanup.py`, `surface_normalization.py`, `frozen_palette.py`, `difference_guard_core.py`, `difference_guard_multimap.py`, `image_inputs.py` and requirements are byte-identical to V2.4. CPU/GPU BM3D, NLM, boundary diffusion, palette and Preserve Edits function ASTs match V2.4. Auto supplies different strengths or skips a fine stage; it does not change a backend implementation.
+Native scatter alone is an inadequate cue for this correlated contamination. V2.6 also limited surface corrections too strongly and did not limit a stronger backend by location. V2.7 adds coarser eligible-interior measurements and spatial limits at the backend handoff.
 
-## Smoke diagnosis
+## Processing retained
 
-A native 440×760 crop from the supplied 2048×2048 alley source was processed through separate CPU stages: raw BM3D at manual strengths 100/100, legacy guards, source copy-back, local cleanup and broad normalization, with palette correction off. The raised/outlined smoke appearance is already visible in raw maximum BM3D. Keeping a sharp boundary while flattening interior/background cues further makes the smoke read as a cutout. Source protection is therefore not the sole cause.
+`region_cleanup.py`, `surface_normalization.py`, `frozen_palette.py`, `difference_guard_core.py`, `difference_guard_multimap.py`, `image_inputs.py`, `line_protection.py` and requirements are byte-identical to V2.6. CPU/GPU BM3D implementations, palette estimation and edit replacement are unchanged. The source tracer remains the V2.4 baseline by default; faint continuation stays optional.
 
-This identifies an early processing stage in a controlled reproduction. It does not establish which historical release first showed the artifact, or reproduce the exact GPU/color-corrected screenshot.
+Auto derives stronger candidate settings from native and coarser source analysis. Coarse samples require at least 64 eligible interior samples per channel, with protected edges excluded. Scale compensation is a white-noise-equivalent cue, not a claim that the measured variation is certainly noise. Restoration pixels remain at the original resolution.
 
-## Actual full-resolution inputs
+The guarded backend correction is then limited independently in LAB luminance/chroma. Local and broad candidates retain their own limits. Joint luminance/chroma coherence and a six-pixel source-protection fade replace the overly restrictive earlier permissions; independent native grain can authorize a fine gray correction without broad brightness flattening.
 
-Both supplied edited sources were tested at 2048×2048. Strength ceilings were 100, similarity range 40, local radius 16, hard guard 100, soft guard 60 and shading sensitivity 35. Original color-reference files were absent from these compact line-test ZIPs, so these structure/strength checks used palette correction off. New comparison exports include the reference when it fits the share budget.
+## Full-resolution checks
 
-| Measurement | Alley/smoke | Denim/cabin |
+Both supplied sources were processed at 2048×2048 through the actual CPU BM3D adapter, without reusing a differently configured backend candidate. Ceilings were 100, LAB range 40, radius 16, hard guard 100, soft guard 60 and shading sensitivity 35.
+
+| Automatic choice | Denim/cabin | Alley/smoke |
 | --- | ---: | ---: |
-| Estimated fine LAB sigma, L | 0.172 | 0.190 |
-| Estimated fine LAB sigma, a / b | 0.290 / 0.270 | 0.293 / 0.255 |
-| Selected fine L / C slider | 0 / 0, skipped | 0 / 0, skipped |
-| Mean luminance surface permission | 8.44% | 26.37% |
-| Mean chroma surface permission | 21.75% | 45.66% |
-| Auto total processing time | 15.45 s | 16.33 s |
-| Original source-core pixels changed before palette | 0 | 0 |
+| Native L scatter | 0.190 | 0.172 |
+| Maximum eligible coarse equivalent L scatter | 5.592 | 6.169 |
+| Selected denoiser L slider | 79.08 | 87.92 |
+| Selected denoiser C slider | 26.66 | 16.71 |
+| Backend executed | Yes | Yes |
+| Mean surface/backend L permission | 59.00% | 30.65% |
+| Mean surface/backend C permission | 68.98% | 44.00% |
+| Protected source-core pixels changed before palette | 0 | 0 |
 
-The nearly equal fine-scatter estimates alone cannot distinguish these cases. Medium colored variation and directional structure produce different surface permissions. These averages are weights, not percentages of noise removed.
+Candidate settings are not uniform applied strengths: the alley can need a strong candidate for some colored interiors while smoke receives much less luminance correction. Permissions are weights, not percentages of noise removed.
 
-The alley received a full manual-versus-auto export using actual CPU BM3D for the maximum manual result. Manual total was 328.64 seconds, including 314.01 seconds of BM3D; automatic skipped BM3D. This compares different processing, not faster equivalent denoising. Both variants had identical source masks (719,918 protected pixels); changed common core pixels were zero. The controlled share ZIP was 28,613,814 bytes and recorded its omitted optional images.
+The newly supplied denim color reference was used in its normal final output. The alley reference was absent from its earlier compact ZIP, so the smoke structure check kept palette correction off. A separate denim preview approximated the old fixed palette from its quantized manual before/after pair solely to inspect cleanup at comparable colors. That approximation is not part of the application. The actual Compare auto workflow still freezes one exact manual-baseline field for both variants.
 
-Native crops from full-image outputs were inspected. Auto retained pavement seams and interior texture in the smoke, without the pronounced maximum-strength rim. Denim showed moderate mottling reduction, with substantial residual texture compared with maximum manual cleanup. The full denim stage residuals summed exactly to total change. Neither image establishes general semantic noise detection.
+Native crops were inspected for denim, cabin/window lines, tree shading, smoke, clothing seams and the parking area. V2.7 showed visibly greater denim blotch reduction than V2.6, with some residual texture. Smoke kept interior pavement cues without the pronounced maximum-strength cutout rim. Core pixels alone do not establish perfect contrast or retention of every untraced detail.
 
-## Automated and regression checks
+Both full-image stage checks passed: raw backend + legacy guards + automatic backend limiting equals the controlled handoff; local + broad equals combined cleanup; denoising + cleanup + palette equals total RGB change. No protected source-core pixel changed before color correction.
 
-The suite completed with **73 passed, 1 skipped** under an actual Linux Tk display. It includes actual CPU BM3D and native Tk/drag-drop integration.
+Both CPU jobs ran concurrently and took approximately 659 seconds each including contention, with about 15 seconds of surface cleanup per image. These are not isolated performance benchmarks and do not predict GPU timing. Unlike V2.6 on these inputs, the new automatic mode actually executes the denoiser.
 
-New checks cover:
+## Measured denim texture
 
-- Fine-noise response, requested ceilings, invalid input and exact backend arguments.
-- Different cleanup permission for colored mottling versus gray structure; zero permission on source cores and reduced permission nearby.
-- Exact zero-weight bypass, bounded weights, chroma-only limiting and protected RGB retention.
-- An uncorrupted shaded image remaining byte-identical over three automatic passes, with fine denoising skipped.
-- Reduced error against known clean synthetic colored surfaces; the conservative correlated-mottle test improves MSE by about 7%, rather than claiming complete removal.
-- Actual small CPU BM3D reducing known independent random-noise MSE by more than half.
-- Reference independence of detection, output geometry and processing when palette correction is off.
-- Raw denoiser plus guard signed residuals equaling the combined handoff; local plus broad residuals equaling cleanup; all processing stages summing to total.
-- Rejecting a manual cached backend candidate when automatic settings require a different run.
-- Manual/auto comparison using separately selected backend settings, one frozen palette field, exact common protection, full-size input/output export and a compact share archive.
-- The actual Compare auto button completing its worker and exporting both variants. Existing image drop slots, themes, busy guards, saving actual run settings and stale-result clearing remain covered.
+A fixed flat patch at x=1260–1399, y=1230–1389 was selected before measuring the new output. All measurements below use native pre-palette LAB luminance, so reference colors cannot account for the reduction.
 
-A native 128×128 CPU regression with fine/local/broad strengths 100, similarity range 40 and Auto off matched V2.4 **byte-for-byte in output RGB and source mask**. Existing cleanup and optional faint-line tests also pass.
+| Measurement | Original | V2.6 Auto | V2.7 Auto CPU | Supplied manual maximum GPU |
+| --- | ---: | ---: | ---: | ---: |
+| L high-pass RMS, Gaussian sigma 1 | 0.447 | 0.318 | 0.217 | 0.190 |
+| L high-pass RMS, sigma 4 | 0.989 | 0.719 | 0.532 | 0.482 |
+| L high-pass RMS, sigma 8 | 1.215 | 0.935 | 0.743 | 0.690 |
+| Grid-band power / V2.6 Auto power | 3.878 | 1.000 | 0.092 | 0.002 |
+
+Grid power uses a Hann-windowed, plane-detrended FFT, summing the axial 0.10–0.15 cycles/pixel bands with transverse frequency below 0.012. V2.7 reduced this measured grid-band power by about 90.8% relative to V2.6, and sigma-4/sigma-8 RMS by about 26.0%/20.5%. This describes one selected flat patch and frequency band, not total image noise or a general restoration score. The manual GPU image is context, not a CPU/GPU equivalence test; it remains smoother in this patch but produces the unwanted smoke behavior when applied globally.
+
+## Automated and baseline checks
+
+**76 tests passed, 1 skipped** under an actual Linux Tk display. The skip is a historical image fixture that is unavailable in this environment. Tests include actual CPU BM3D, native drag/drop and the real Compare auto button.
+
+New regressions ensure that correlated colored contamination can activate the backend despite native scatter below the old skip thresholds. A known corrupted color patch improves MSE by more than 40% against its clean original while neighboring legitimate gray detail stays byte-identical. A deliberately destructive mocked backend confirms that spatial limiting restores those quiet gray pixels, rather than relying on a gentle backend to hide the problem.
+
+Existing checks still cover strength ceilings, exact backend arguments, source/reference independence, three unchanged passes of a clean shaded image, fine random-noise reduction, source-core retention, actual residual accounting, one shared comparison palette, compact ZIP contents and saving actual run settings. The new comparison exports the actual raw automatic backend and its controlled handoff when the share budget permits.
+
+A separate native 128×128 CPU regression with Auto off matched the accepted V2.4 output RGB and source mask byte-for-byte. The retained cleanup, faint-line and legacy comparison tests also passed.
 
 ## Limits
 
-No GPU or Windows Explorer end-to-end execution is available in this Linux environment. GPU adapters are retained, not newly benchmarked. Palette bias, color-induced contrast compression, edit-replacement issues and sparkle halos are not addressed here. Gray-only broad contamination and uncertain texture can remain; intentional colored texture can be softened. The controller is calibrated conservatively for these illustrative inputs and BM3D strength scales, not validated across every generation model or image style.
+GPU execution and Windows Explorer end-to-end behavior remain unverified here. Their adapters/input paths are retained. No color-estimation, antialiasing, edit-replacement, neural restoration or lighting-control change is included. Gray-only broad contamination can remain, and intentional colored texture can be softened. Coarse variation and spatial permissions remain heuristics rather than semantic recognition of artistic intent.

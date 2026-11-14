@@ -81,15 +81,17 @@ def save_diagnostics(maps, directory, prefix=''):
     draw.text((20, 90), 'Binary protection maps: black = unprotected; white = protected.', fill='white')
     draw.text((20, 113), 'Colors visualize numbers. They do not identify the hue or type of noise.', fill='white')
     guide.save(directory/(prefix+'MAP_LEGEND.png'))
-    note = '''# Diagnostic map meanings — V2.6 automatic strength
+    note = '''# Diagnostic map meanings — V2.7 multiscale automatic strength
 
 - auto_luminance_strength / auto_chroma_strength: source-derived permission, 0–1, applied to each local/broad candidate correction before palette matching. These fields can reduce but never increase the requested cleanup. They are not noise probabilities.
+- auto_denoise_luminance_strength / auto_denoise_chroma_strength: permission applied to the guarded backend handoff. These allow a strong candidate in noisy colored interiors while retaining quieter gray structure elsewhere.
+- auto_denoise_limit_change / auto_denoise_limit_signed_rgb: automatic spatial limiting minus the guarded backend handoff. Signed values often undo part of the candidate correction. Raw backend + legacy guard + this automatic limit sum exactly to denoise_signed_rgb; manual runs omit the last term.
 - auto_color_variation: medium-scale LAB chroma variation divided by 2, clipped for display. It helps authorize colored-blotch cleanup; it is not a segmentation mask.
 - auto_luminance_coherence: directional coherence of source luminance gradients, 0–1; high coherence reduces automatic surface smoothing.
 - unprotected_denoise_change / unprotected_denoise_signed_rgb: raw backend result minus original input, BEFORE legacy guards, source copy-back, cleanup and palette correction. Zero when the automatic controller skips the backend.
-- guard_change / guard_signed_rgb: legacy blending and source copy-back minus that raw backend result. Raw denoising plus guard signed changes sum exactly to denoise_signed_rgb.
+- guard_change / guard_signed_rgb: legacy blending and source copy-back minus that raw backend result, before automatic backend limits.
 - blotch_boundaries: actual original/local cleanup barriers used to partition surfaces. White = excluded from broad correction.
-- blotch_automatic_amount: retained V2.4 candidate correction amount, 0–1, before the separate luminance multiplier and V2.6 automatic limits. This is not semantic certainty; use blotch_change for the actual applied change.
+- blotch_automatic_amount: retained V2.4 candidate correction amount, 0–1, before the separate luminance multiplier and automatic limits. This is not semantic certainty; use blotch_change for the actual applied change.
 - blotch_fit_error: local target residual color distance divided by the configured LAB range.
 - blotch_boundary_taper: gradual strength fade beside protected boundaries; 0 = no correction, 1 = full allowed amount.
 - blotch_change / blotch_signed_rgb: broad correction ONLY, before palette correction; fixed 16-RGB-level scale and signed int16 data.
@@ -99,11 +101,11 @@ def save_diagnostics(maps, directory, prefix=''):
 - source_line_trace_base: original V2.4 trace before faint-segment continuation.
 - source_line_rescued: observed faint source edge pixels retained between compatible traced anchors; no blank gaps are drawn.
 - source_line_added_core: additional pixel protection only. Previously protected pixels are retained.
-- Faint-segment continuation is off by default in V2.6; the three continuation maps above remain available for its legacy/API comparison.
+- Faint-segment continuation remains off by default; the three continuation maps above remain available for its legacy/API comparison.
 - source_line_core: actual original-pixel protection at the denoiser handoff, and the SAME mask passed into cleanup barriers. White pixels retain original RGB before final palette correction.
 - hard / soft / guard: legacy BM3D/NLM evidence and blending. They are not the V2.1 source-line core. In legacy Boundary constrained, guard summarizes requested edge weights, not a separate copy-back operation.
 - v2_boundaries: actual combined cleanup exclusions from carried source lines AND locally detected cleanup boundaries. White = excluded. The source core can be present even if the denoised image's local gradient has disappeared.
-- denoise_change: original edited input → denoiser + guards handoff.
+- denoise_change: original edited input → denoiser + guards + automatic spatial limits handoff.
 - cleanup_change: that handoff → V2 surface cleanup, BEFORE reference color correction.
 - palette_change: cleaned image → final reference color correction ONLY.
 - total_change: original edited input → final output. This is NOT a detected-noise map.

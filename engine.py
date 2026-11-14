@@ -1,4 +1,4 @@
-"""Stable Shift v2.6 — non-generative image restoration.
+"""Stable Shift v2.7 — non-generative image restoration.
 
 The reference supplies palette information only in Restore Quality. Structural analysis and optional V2 surface cleanup use the edited/denoised image. No Forge hooks.
 """
@@ -331,7 +331,7 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     auto_report={'enabled':False}
     if opts.auto_strength:
         from automatic_strength import estimate_strength,limit_cleanup
-        if progress:progress('Automatic strength: measuring fine scatter and colored surface variation')
+        if progress:progress('Automatic strength: measuring native and correlated multiscale scatter')
         effective,auto_maps,auto_report=estimate_strength(original,opts,source_core)
         maps.update(auto_maps)
     analyzed=perf_counter()
@@ -341,6 +341,16 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     candidate=original if auto_report.get('backend_skipped',False) else denoised_candidate
     out,maps=_restore_quality_base(clean,edited,replace(effective,color_match=False),diagnostics=diagnostics,
                                   maps=maps,source_core=source_core,denoised_candidate=candidate)
+    if opts.auto_strength:
+        handoff=array(out)
+        limited=limit_cleanup(original,handoff,auto_maps['auto_denoise_luminance_strength'],
+                              auto_maps['auto_denoise_chroma_strength'],source_core)
+        if diagnostics:
+            signed=limited.astype(np.int16)-handoff.astype(np.int16)
+            maps['auto_denoise_limit_signed_rgb']=signed
+            maps['auto_denoise_limit_change']=np.mean(np.abs(signed.astype(np.float32)),axis=2)/16
+        auto_report['actual_denoise_mean_rgb_change']=float(np.mean(np.abs(limited.astype(np.float32)-original)))
+        out=Image.fromarray(limited)
     denoised=perf_counter()
     denoised_rgb=array(out)
     if opts.auto_strength:region_options=RegionOptions(effective.cleanup, opts.cleanup_range, opts.cleanup_luma, opts.cleanup_radius).validated()
@@ -388,7 +398,7 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     if diagnostics:
         maps.update(stage_diagnostics(original,denoised_rgb,cleanup_rgb,rgb))
     diagnostics_finished=perf_counter()
-    maps['report']={'version':'2.6','backend':opts.method,'resolution':list(edited.size),
+    maps['report']={'version':'2.7','backend':opts.method,'resolution':list(edited.size),
         'source_analysis_seconds':analyzed-start,'denoise_seconds':denoised-analyzed,
         'cleanup_seconds':cleaned-denoised,'color_seconds':finished-cleaned,
         'diagnostics_seconds':diagnostics_finished-finished,'total_seconds':diagnostics_finished-start,

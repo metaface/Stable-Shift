@@ -38,7 +38,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.6 — Automatic Strength Test')
+        root.title('Stable Shift V2.7 — Multiscale Automatic Strength')
         root.geometry('1400x940')
         root.minsize(1040, 760)
         self.images = {'clean': None, 'edited': None}
@@ -376,7 +376,7 @@ class App:
         parent = filedialog.askdirectory(title='Choose parent folder for a new automatic comparison')
         if not parent:
             return
-        directory = Path(parent) / datetime.now().strftime('auto_test_v26_%Y%m%d_%H%M%S_%f')
+        directory = Path(parent) / datetime.now().strftime('auto_test_v27_%Y%m%d_%H%M%S_%f')
         self.begin('Comparing manual and automatic strengths; backend settings are tested separately')
         def worker():
             try:
@@ -519,11 +519,11 @@ class App:
     @staticmethod
     def auto_description(report):
         if report.get('backend_skipped'):
-            fine = 'fine denoising skipped'
+            fine = 'denoiser skipped'
         elif report['effective_noise'] == 0 and report['effective_color_noise'] == 0:
-            fine = 'fine denoise at backend minimum'
+            fine = 'denoiser at backend minimum'
         else:
-            fine = f'fine L {report["effective_noise"]:.0f}, C {report["effective_color_noise"]:.0f}'
+            fine = f'denoiser candidate L {report["effective_noise"]:.0f}, C {report["effective_color_noise"]:.0f}'
         return f'Auto: {fine}; surface limits L {report["mean_luminance_surface_permission_percent"]:.0f}%, C {report["mean_chroma_surface_permission_percent"]:.0f}%'
 
     def save(self):

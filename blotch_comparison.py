@@ -49,7 +49,7 @@ def export_blotch_comparison(clean, edited, options, directory, progress=None):
     nearby = cv2.dilate(core.astype(np.uint8), np.ones((7, 7), np.uint8)).astype(bool) & ~core
     nearby_change = np.abs(broad.astype(np.int16)-baseline.astype(np.int16))[nearby]
     summary = {
-        'version': '2.6', 'options': asdict(options), 'shared_processing': maps['report'],
+        'version': '2.7', 'options': asdict(options), 'shared_processing': maps['report'],
         'broad_correction': report, 'shared_denoiser_ran_once': True,
         'palette': 'Same frozen V2.1 field for both variants' if options.color_match else 'Off for both variants',
         'paired_palette_seconds': palette_seconds,

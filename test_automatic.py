@@ -118,7 +118,8 @@ def test_backend_gets_effective_strengths_and_actual_stage_residuals_add_up(monk
     assert not np.array_equal(out, source)
     core = maps['source_line_core'] > .5
     assert np.array_equal(np.array(out)[core], source[core])
-    assert np.array_equal(maps['unprotected_denoise_signed_rgb']+maps['guard_signed_rgb'], maps['denoise_signed_rgb'])
+    assert np.array_equal(maps['unprotected_denoise_signed_rgb']+maps['guard_signed_rgb']+
+        maps['auto_denoise_limit_signed_rgb'], maps['denoise_signed_rgb'])
     assert np.array_equal(maps['local_cleanup_signed_rgb']+maps['blotch_signed_rgb'], maps['cleanup_signed_rgb'])
     assert np.array_equal(maps['denoise_signed_rgb']+maps['cleanup_signed_rgb']+maps['palette_signed_rgb'], maps['total_signed_rgb'])
 
@@ -151,6 +152,63 @@ def test_actual_cpu_automatic_denoising_reduces_known_random_noise():
     source = np.uint8(np.clip(clean.astype(float)+rng.normal(0, 6, clean.shape), 0, 255))
     out, _ = restore_quality(Image.fromarray(source), Image.fromarray(source), ceilings())
     assert np.mean((np.array(out).astype(float)-clean)**2) < np.mean((source.astype(float)-clean)**2)*.5
+
+
+def mixed_correlated_source():
+    """Known colored contamination beside legitimate gray low-contrast detail."""
+    rng = np.random.default_rng(81)
+    y, x = np.mgrid[:256, :384]
+    clean = np.full((*x.shape, 3), [48., -3., -16.], np.float32)
+    clean[:, 192:] = [48., 0., 0.]
+    clean[:, 192:, 0] += np.sin(y[:, 192:]/19.)*1.5
+    clean[55:200, 265:320, 0] += 3.
+    noise = cv2.GaussianBlur(rng.normal(0, 1, x.shape).astype(np.float32), (0, 0), 4.)
+    noise /= noise.std()
+    dirty = clean.copy()
+    dirty[:, :192, 0] += noise[:, :192]*1.8+np.sin(x[:, :192]*np.pi/4.)*.8
+    dirty[:, :192, 1] += noise[:, :192]*1.4
+    dirty[:, :192, 2] -= noise[:, :192]*1.4
+    return to_rgb(clean), to_rgb(dirty)
+
+
+def test_correlated_noise_can_trigger_backend_despite_small_native_scatter():
+    _, source = mixed_correlated_source()
+    effective, maps, report = estimate_strength(source, ceilings())
+    assert report['fine_sigma_lab'][0] < .5
+    assert max(report['fine_sigma_lab'][1:]) < 1.275
+    assert not report['backend_skipped']
+    assert effective.noise > 10
+    assert report['correlated_equivalent_sigma_lab'][0] > 1
+    gray = maps['auto_denoise_luminance_strength'][80:175, 250:350]
+    assert gray.max() == 0
+
+
+def test_backend_spatial_limits_retain_gray_detail_beside_colored_contamination(monkeypatch):
+    import engine
+    _, source = mixed_correlated_source()
+    calls = []
+    def deliberately_destructive_candidate(rgb, noise, color):
+        calls.append((noise, color))
+        return cv2.GaussianBlur(rgb, (0, 0), 15.)
+    monkeypatch.setattr(engine, '_bm3d', deliberately_destructive_candidate)
+    out, maps = restore_quality(Image.fromarray(source), Image.fromarray(source),
+        ceilings(source_guard=False))
+    gray = np.s_[80:175, 250:350]
+    assert calls and calls[0][0] > 0
+    assert np.array_equal(np.array(out)[gray], source[gray])
+    assert np.any(maps['auto_denoise_limit_signed_rgb'][gray] != 0)
+
+
+def test_actual_cpu_reduces_correlated_colored_noise_and_keeps_neighboring_gray_detail():
+    clean, source = mixed_correlated_source()
+    out, _ = restore_quality(Image.fromarray(source), Image.fromarray(source),
+        ceilings(source_guard=False))
+    color = np.s_[32:224, 24:160]
+    gray = np.s_[80:175, 250:350]
+    before = np.mean((source[color].astype(float)-clean[color])**2)
+    after = np.mean((np.array(out)[color].astype(float)-clean[color])**2)
+    assert after < before*.6, (before, after)
+    assert np.array_equal(np.array(out)[gray], source[gray])
 
 
 def test_comparison_runs_both_selected_strengths_and_freezes_palette(tmp_path, monkeypatch):
