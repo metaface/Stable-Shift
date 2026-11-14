@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 startup.log
 stable_shift_v2_*/
+blotch_test_v23_*/

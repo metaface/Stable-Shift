@@ -1,48 +1,67 @@
-# V2.1 validation
+# V2.4 validation
 
-## Checks
+## Scope
 
-Linux with a real Tk/tkdnd test display:
+V2.4 changes the extra blotch pass from V2.3. The V2.1 source-line tracer, local sampler, legacy palette/core, edit detection, BM3D adapters and dependencies are byte-identical to the accepted V2.1 files. The frozen-palette wrapper and comparison export from V2.3 are retained. V2.2's unmerged palette experiment is excluded.
 
-`DISPLAY=:99 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python -m pytest -q`
+The regional quadratic is now only a detrending aid. A normalized, native-resolution local residual estimate is added back, so wider nonlinear shading is retained. A 12-pixel smooth boundary taper limits contrast changes near protected lines. Local confidence no longer becomes almost certain just because the user selects LAB similarity 40. Requested corrections are capped at 3 LAB units before RGB conversion; final RGB channels stay within the observed 49×49 source neighborhood envelope.
 
-**31 passed, 1 skipped.** The skipped check requires a historical real-image fixture that is not available. GPU execution and Windows Explorer end-to-end drag/drop are not verified in this executor.
+## Automated checks
 
-Retained checks cover actual CPU BM3D noise reduction, explicit GPU dependency failure, size/registration rules, reference independence, V2 cleanup, high-contrast and diagonal boundaries, native Tcl drop callbacks, filename parsing, GUI processing, themes, PNG saving and actual-settings export.
+Run under an available desktop/display:
 
-New regressions cover:
-- A faint long line can survive source linking without meeting the hard-seed threshold.
-- A featureless noisy surface is not mostly classified as protected linework.
-- The same original source core is used at the denoiser handoff and in cleanup. Protected source pixels remain exact before palette correction even when a controlled denoiser erases the line.
-- Carried source boundaries stop cross-surface sampling when cleanup's local image cannot detect the boundary.
-- Denoise + cleanup + palette signed residuals sum exactly to total change.
-- Palette-only changes produce zero cleanup residual, preventing total-change maps being misrepresented as noise maps.
-- Exported signed int16 arrays retain signs/values; binary protection PNGs use actual black/white values and have legends.
-- The comparison plan isolates legacy baseline, source-line protection and surface cleanup.
-- The actual GUI Save maps action exports raw arrays, source protection and legends.
+```text
+DISPLAY=:100 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python -m pytest -q
+```
 
-## Actual CPU BM3D weak-line exercise
+The suite covers CPU BM3D, explicit GPU failures, source-line linking/propagation, reference independence, local cleanup, stage accounting, palette equivalence, native Tk file drops, themes, saved settings and both GUI workers. The historical fixture test remains skipped when its old local fixture is absent.
 
-A 192×192 synthetic dark surface with three faint one-pixel horizontal lines, a stronger connected frame and a high-contrast light foreground was processed with actual CPU BM3D, both with and without source tracing. Legacy hard/soft guards were set to 0 in both runs to isolate the new protection; palette correction was off.
+**51 passed, 1 skipped** in the final full suite.
 
-At the measured interior of the faint line, baseline mean absolute RGB error was 7/255; source tracing plus cleanup retained original line RGB exactly (0 error), with 100% traced coverage along that measured segment. This is a controlled synthetic regression, not a measurement on the user's cabin illustration.
+New regression checks cover nonlinear shadows, repeated processing of clean shading, bounded local output colors, and the immediate surroundings of a weak protected stroke. The saved-pair replay is tested with and without an actual source mask.
 
-## 2048×2048 execution
+Controlled results:
 
-A synthetic two-surface image with a separating line and RGB noise was processed in Region cleanup only mode using a half-sized reference, source tracing on, cleanup 60, LAB range 12, luminance 60 and radius 16. Palette correction was disabled:
+- Correlated blotches on a known clean shaded surface: RGB MSE **38.112 → 14.846 at 70** (61% reduction), and **→ 9.053 at 100** (76% reduction). These are synthetic error reductions, not percentages of noise removed from the supplied artwork.
+- A clean quadratic-shading control stays byte-identical through five passes.
+- A clean nonlinear shadow at strength 100/range 40 retains **23.927 of its original 23.975 LAB-L contrast**; mean brightness change is 0.441 LAB-L.
+- Weak protected stroke pixels remain exact, with at most one RGB level of change in the tested three-pixel surroundings.
 
-- Original source analysis/tracing: 1.28 s.
-- Denoiser handoff (no denoiser in this mode): 0.03 s.
-- Cleanup: 5.70 s.
-- Stage diagnostics: 0.32 s.
-- Total processing: 7.33 s, excluding file export and preview rendering.
-- Source core: 3.32% of pixels.
-- Peak process RSS: approximately 1.29 GiB, including synthetic generation and diagnostics.
+## Supplied V2.3 comparison
 
-These are development-executor figures, not an RTX 5080 benchmark or a claim of superior restoration quality. Original inline artwork is not available locally as an image fixture. The original image remains the color reference only; no reference structure was used.
+Used the user's native 2048×2048 `00_v21_before_palette.png` and `01_broad_before_palette.png`, and read the JSON settings as data. The original settings were GPU BM3D 100/100, local cleanup 100, LAB range 40, brightness cleanup 100, broad maximum 100. This executor has no GPU; the saved shared baseline lets us isolate the extra stage without replacing the user's denoiser run.
 
-## Desktop
+The actual original source-core mask was not in the supplied ZIP. The replay freezes **all unchanged pixels from the submitted pair**: 24.646% of the image. This includes every originally protected pixel plus some quiet pixels. It is stricter than the original 13.153% mask, and can understate cleanup. It does not establish an exact end-to-end rerun.
 
-The V2.1 checkbox and dark preview layout were visually inspected under a test display with native tkdnd 2.10.3 and Tcl/Tk 9. The existing drag/drop bindings, background worker and Save maps flow were exercised. Windows registry theme detection and physical Explorer drops still require user testing.
+At maximum 100, the local candidate:
 
-The CuPy CUDA-path warning is documented; no CUDA_PATH guessing or warning suppression was added. The BM3D adapters are unchanged.
+- Takes about **6.1 seconds** on this development CPU.
+- Changes 36.884% of pixels, with a mean absolute RGB change of 0.375/255.
+- Changes **zero** pixels in the conservative frozen set.
+- Produces **zero** output pixels with a channel outside the observed 49×49 source envelope. The submitted V2.3 result had 278,880 such pixels; that count is not a count of visible black dots.
+- Has native pre-palette L changes from **−2.417 to +2.545**, versus V2.3's **−13.654 to +15.210**.
+
+Native crops of denim, background trees, cabin/window, foreground-tree shading and the eye were visually inspected. The candidate keeps wider shading and avoids the abrupt added rims and eye patches seen in the submitted V2.3 output; remaining blotches are visible. A display approximation derived from the submitted before/after palette pair was used for additional visual inspection only. All measurements above use the actual pre-palette pixels; the original palette field cannot be recovered exactly from the supplied PNGs.
+
+To replay an extracted comparison without rerunning BM3D:
+
+```text
+python validate_blotch_pair.py --input "PATH/comparison" --out "PATH/replay"
+```
+
+Optionally add `--source-mask "PATH/shared_source_line_core.png"` from that exact run. With no mask, the conservative unchanged-pixel superset is explicitly recorded. The tool exports a pre-palette candidate and JSON report; it does not reconstruct an original input or apply an estimated palette.
+
+## Full-resolution beach control
+
+Reused the previously computed 2048×2048 CPU BM3D/V2.1 local-cleanup baseline and **actual original source-core mask** from the two supplied beach inputs. No generative output or additional character reference was used as ground truth. The original inputs/artwork are not committed.
+
+Both variants use the actual V2.1 frozen field. Its baseline output again matches the original V2.1 palette function byte-for-byte.
+
+| Broad maximum | Stage time | Pixels changed | Mean RGB change /255 | Changed core before/after palette | Max RGB change within 3 px of core |
+| --- | --- | --- | --- | --- | --- |
+| 70 | 6.37 s | 27.108% | 0.231 | 0 / 0 | 1 |
+| 100 | 5.95 s | 32.172% | 0.345 | 0 / 0 | 1 |
+
+Times cover the extra CPU stage, not BM3D or export. Native fur crops were inspected. Cleanup is modest and existing sparkle halos remain. GPU execution and Windows Explorer end-to-end behavior are not verified in this Linux executor; the existing adapters/dependencies are unchanged.
+
+Exact protected RGB and bounded local colors are useful constraints, not proof that all real linework, artistic shading or texture is classified correctly. The next visual comparison remains necessary before merging this test.

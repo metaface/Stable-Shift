@@ -1,28 +1,23 @@
 # Stable Shift
 
-Standalone experiments for correcting color drift and cleaning Stable Diffusion outputs while retaining the edited image's structure. Forge Neo integration and AI-assisted restoration are later work.
+Standalone cleanup/color-restoration experiments for Stable Diffusion outputs.
 
-## V2.1 — carry source-line protection through cleanup
+## V2.4 — local blotch correction
 
-1. Choose **Code → Download ZIP**, extract separately, and run **START_Difference_Guard.bat**.
-2. Drop your color reference and edited image into their input panels.
-3. Select **GPU BM3D** and leave **Trace source lines before denoising and protect them through cleanup** checked.
-4. Start with Surface cleanup **60**, Brightness cleanup **60**, Color similarity **12**, Radius **16**.
-5. Click **Compare V2**. First compare `01_denoiser_only.png` against `02_denoiser_source_lines.png` to judge line preservation without surface cleanup. Then compare `03_denoiser_plus_surface.png` to judge cleanup.
+This test revises the extra blotch pass that caused outlines, eye patches and lost shading in V2.3. It includes the accepted V2.1 line tracing and palette behavior. Download this branch directly; merging the earlier experimental branches is unnecessary.
 
-With a denoiser selected and source tracing enabled, comparison exports four variants:
+1. Download this branch's ZIP and extract it. Keep your working V2.1 folder separately.
+2. Run **START_Difference_Guard.bat** and load/drop the same reference and edited image.
+3. Use the same denoiser and existing cleanup settings as your previous comparison. Leave source-line tracing enabled.
+4. Start **Broad correction maximum** at **70** and select **Compare blotches**. You can repeat at **100** to check the previous failure cases.
+5. Compare **02_v21_same_palette.png** with **03_broad_same_palette.png** at native resolution. The **00/01** pair isolates cleanup before color correction.
 
-- V2 baseline: existing denoiser and legacy guards, no source tracing or surface cleanup.
-- Same denoiser + linked source-line protection, no surface cleanup.
-- Same denoiser + source-line protection + surface cleanup.
-- Source-protected surface cleanup alone.
+The new pass smooths local residual patches while retaining broader shading. It fades its correction beside protected edges, rejects heterogeneous neighborhoods even at a permissive similarity setting, limits each color move, and prevents output channels from exceeding the observed local source range. Cleanup is deliberately more restrained than V2.3's regional surface replacement.
 
-**New in V2.1:** hard and soft structure are linked from the original edited image, before denoising. The same source mask preserves line pixels at the denoiser handoff and blocks cleanup sampling through those pixels. A line no longer has to survive denoising to be detected by cleanup.
+**BM3D runs once per comparison.** Both outputs receive one frozen V2.1 palette field fitted from the shared baseline. The source tracer, existing local cleanup and color estimator are held fixed. Reports now include changes immediately beside protected lines as well as exact changes on the lines themselves; unchanged line pixels alone do not prove that a line remains visible.
 
-**BM3D itself is unchanged.** It does not accept our custom boundary mask internally; its source-line preservation is applied at the handoff. The V2 cleanup does enforce the carried mask inside its sampling operation. Undetected details can still soften, and noise on protected lines can remain.
+Development checks used the supplied full-resolution comparison, a cached full-resolution beach baseline with its actual source mask, and controlled blotch/shading tests. The supplied comparison lacks the original source mask, so that replay conservatively freezes every pixel V2.3 left unchanged. It is a cleanup-only replay, not a reproduction of the entire original run. See [VALIDATION.md](VALIDATION.md) for measured results and limits.
 
-Map exports now distinguish denoising, cleanup, palette-only and total changes. They include exact signed RGB arrays, black/white protection maps and a `MAP_LEGEND`. The total difference image is **not** a detected-noise map.
+This still cannot reliably distinguish every intentional texture from a blotch. Some noise, protected fringes and sparkle halos will remain. Automatic estimation applies to the extra blotch pass; BM3D strengths are not automatically calibrated. No antialiasing, generative restoration, lighting progression or Forge integration is included.
 
-The first image supplies color information only. All structure comes from the second image. Different reference sizes, drag/drop, system/dark/light themes and per-stage timings remain supported.
-
-See [STANDALONE.md](STANDALONE.md) for controls and map meanings, and [VALIDATION.md](VALIDATION.md) for checks and limitations. Keep V2.0/V1.1 separately for comparison.
+Only the edited image supplies structure; the reference supplies colors. Drag/drop, system/dark/light themes and CPU/GPU BM3D remain available. See [STANDALONE.md](STANDALONE.md) for installation, controls and diagnostics.

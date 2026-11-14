@@ -49,7 +49,7 @@ def save_diagnostics(maps, directory, prefix=''):
     directory.mkdir(parents=True, exist_ok=True)
     exact = {}
     binary = {'source_line_candidates', 'source_line_seeds', 'source_line_trace',
-              'source_line_core', 'v2_boundaries'}
+              'source_line_core', 'v2_boundaries', 'blotch_boundaries'}
     count = 0
     for name, field in maps.items():
         if not isinstance(field, np.ndarray):
@@ -80,8 +80,14 @@ def save_diagnostics(maps, directory, prefix=''):
     draw.text((20, 90), 'Binary protection maps: black = unprotected; white = protected.', fill='white')
     draw.text((20, 113), 'Colors visualize numbers. They do not identify the hue or type of noise.', fill='white')
     guide.save(directory/(prefix+'MAP_LEGEND.png'))
-    note = '''# Diagnostic map meanings — V2.1
+    note = '''# Diagnostic map meanings — V2.4 (V2.1 maps retained)
 
+- blotch_boundaries: actual original/local cleanup barriers used to partition surfaces. White = excluded from broad correction.
+- blotch_automatic_amount: confidence-limited correction amount, 0–1, before the separate luminance multiplier. This is not semantic certainty.
+- blotch_fit_error: local target residual color distance divided by the configured LAB range.
+- blotch_boundary_taper: gradual strength fade beside protected boundaries; 0 = no correction, 1 = full allowed amount.
+- blotch_change / blotch_signed_rgb: broad correction ONLY, before palette correction; fixed 16-RGB-level scale and signed int16 data.
+- local_cleanup_change / local_cleanup_signed_rgb: existing local cleanup only. Local plus blotch signed residuals sum to the combined cleanup_signed_rgb.
 - source_line_confidence: original hard/soft evidence before denoising; 0–1.
 - source_line_seeds / candidates / trace: detected strong seeds, supported weak candidates and linked lines. Black/white, not a color probability.
 - source_line_core: actual original-pixel protection at the denoiser handoff, and the SAME mask passed into cleanup barriers. White pixels retain original RGB before final palette correction.

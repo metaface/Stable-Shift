@@ -1,6 +1,48 @@
-# Stable Shift V2.1 — standalone test build
+# Stable Shift V2.4 — standalone test build
 
-## V2.1 source-line correction
+## Current focus: local blotch correction
+
+V2.4 revises the extra V2.3 blotch stage. V2.1 source-line tracing, local cleanup, color estimation, edit replacement, BM3D adapters and dependencies are retained. The unmerged V2.2 palette experiment is excluded.
+
+### One-variable comparison
+
+Keep the SAME denoiser, noise, color, local-cleanup, brightness and similarity settings as your previous test, with source-line tracing enabled. Start **Broad correction maximum** at 70 and choose **Compare blotches**. A repeat at 100 checks the maximum-strength failures reported for V2.3.
+
+The shared BM3D/local-cleanup baseline runs once. Compare these native-resolution outputs:
+
+- `00_v21_before_palette.png`: shared V2.1 baseline before color correction.
+- `01_broad_before_palette.png`: baseline plus the revised local blotch pass.
+- `02_v21_same_palette.png`: baseline with its V2.1 palette field.
+- `03_broad_same_palette.png`: local blotch correction with the EXACT same field.
+
+Judge 02 versus 03; 00 versus 01 isolates cleanup. Crop sheets use identical coordinates. The legacy Compare V2 workflow leaves broad correction off. Strength 0 is an exact bypass in Run/Preview.
+
+### How the revised pass works
+
+1. The existing boundary graph and original source core partition free interiors. Small regions below 128 pixels stay unchanged.
+2. A robust regional trend detrends the samples. Local, mask-normalized residual smoothing at native resolution adds wider shading back, rather than replacing the region with that trend. Separate regions do not share samples.
+3. Local variation, fine scatter and fit consistency set the automatic correction amount. A high similarity range cannot disable the independent heterogeneity limit.
+4. Correction fades smoothly beside protected boundaries. Requested moves are capped at 3 LAB units before conversion; output RGB channels stay inside the observed 49×49 source neighborhood envelope.
+5. The shared V2.1 palette field is fitted from the pre-broad baseline and applied last to both variants.
+
+The existing Brightness cleanup control scales the extra pass's L correction too. The local radius still controls only V2.1's local sampler; the extra stage uses a fixed 32-pixel residual sigma. No new scale controls are introduced in this test.
+
+**Auto** describes the extra blotch stage's local strength estimate. Existing BM3D noise strengths and local-cleanup settings are still manual. This does not understand artistic intent; intentional texture may be softened, broad contamination may remain, and protected fringes/sparkle halos are not specifically removed.
+
+### Diagnostics and reporting
+
+- `blotch_boundaries`: actual excluded pixels; white means excluded.
+- `blotch_boundary_taper`: gradual correction fade; 0 = none, 1 = full allowed amount.
+- `blotch_automatic_amount`: local confidence-limited strength before luminance scaling and final bounds; not a probability that a pixel is noise.
+- `blotch_fit_error`: local target residual divided by the configured LAB range.
+- `blotch_change` / `blotch_signed_rgb`: the extra stage only, before palette correction.
+- `local_cleanup_change` / `local_cleanup_signed_rgb`: retained V2.1 local cleanup only.
+
+Comparison reports include exact protected-pixel changes before/after the shared palette, plus change immediately beside the core. Unchanged stroke pixels alone do not prove that a stroke keeps its contrast. Raw maps retain native values; previews use fixed legend scales.
+
+See [VALIDATION.md](VALIDATION.md) for the supplied comparison replay, synthetic controls, full-resolution beach control, timing and limitations. The optional `validate_blotch_pair.py` replays exported pre-palette pairs without BM3D; normal use is through the launcher and Compare blotches.
+
+## V2.1 source-line correction (retained)
 
 Leave **Trace source lines before denoising and protect them through cleanup** on for the new behavior. Turning it off restores the V2.0 guard/cleanup behavior for comparison.
 
@@ -44,7 +86,7 @@ A new extracted folder has its own `.venv`; optional CPU/GPU BM3D must be instal
 
 ## Controls and initial comparison
 
-- **Denoiser:** GPU/CPU BM3D retain the V1.1 adapter. NLM and Boundary constrained remain available as legacy comparisons. Region cleanup only skips those denoisers; Color only skips them too, and is truly palette-only when Surface cleanup is 0.
+- **Denoiser:** GPU/CPU BM3D retain the V1.1 adapter. NLM and Boundary constrained remain available as legacy comparisons. Region cleanup only skips those denoisers; Color only skips them too, and is truly palette-only when Surface cleanup and Broad correction maximum are both 0.
 - **Luminance/Color denoise:** existing denoiser strengths. They do not set V2 surface cleanup strength.
 - **Surface cleanup:** 0 bypasses V2 exactly before palette correction; 100 applies its complete estimated correction. Start at 60. This is the replacement for the ineffective V1.1 chroma-only finishing pass.
 - **Brightness cleanup:** how much luminance cleanup accompanies chroma cleanup. Start at 60; 0 keeps LAB lightness unchanged during cleanup, apart from small RGB round-trip/gamut effects. Unlike V1.1, default cleanup can affect gray brightness texture too.
