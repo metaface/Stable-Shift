@@ -105,3 +105,81 @@ def test_ui_worker_save_and_actual_run_settings(tmp_path, monkeypatch):
         assert app.result is None  # No stale output after replacing an input.
     finally:
         close_app(root)
+
+
+def test_ui_blotch_comparison_worker_and_strength(tmp_path, monkeypatch):
+    from app import filedialog, messagebox
+    root, app = make_app()
+    try:
+        def fail(*args, **kwargs):
+            pytest.fail('Unexpected UI error: '+str(args))
+        monkeypatch.setattr(messagebox, 'showerror', fail)
+        monkeypatch.setattr(messagebox, 'showwarning', fail)
+        reference = tmp_path/'reference.png'
+        edited = tmp_path/'edited.png'
+        Image.new('RGB', (32, 24), (110, 140, 170)).save(reference)
+        Image.new('RGB', (96, 80), (80, 100, 120)).save(edited)
+        app.set_image('clean', reference)
+        app.set_image('edited', edited)
+        app.method.set('Region cleanup only')
+        app.cleanup.set(0)
+        app.blotch_strength.set(70)
+        assert app.opts().blotch_strength == 70
+        monkeypatch.setattr(filedialog, 'askdirectory', lambda **kwargs: str(tmp_path))
+        app.compare_blotches()
+        deadline = time.monotonic()+15
+        while app.busy and time.monotonic() < deadline:
+            root.update()
+            time.sleep(.01)
+        assert not app.busy
+        folders = list(tmp_path.glob('blotch_test_v25_*'))
+        assert len(folders) == 1
+        assert (folders[0]/'03_broad_same_palette.png').exists()
+        assert 'Changed protected pixels: 0' in app.result_info.get()
+    finally:
+        close_app(root)
+
+
+def test_ui_compare_auto_button_exports_both_variants_and_share_archive(tmp_path, monkeypatch):
+    import json
+    from app import filedialog, messagebox
+    from test_faint_lines import faint_stroke
+    root, app = make_app()
+    try:
+        def fail(*args, **kwargs):
+            pytest.fail('Unexpected UI error: '+str(args))
+        monkeypatch.setattr(messagebox, 'showerror', fail)
+        monkeypatch.setattr(messagebox, 'showwarning', fail)
+        path = tmp_path/'faint source.png'
+        Image.fromarray(faint_stroke()[0]).save(path)
+        app.set_image('clean', path)
+        app.set_image('edited', path)
+        assert app.automatic.get() is True
+        assert app.opts().faint_continuity is False
+        app.method.set('Region cleanup only')
+        app.cleanup.set(100)
+        app.blotch_strength.set(100)
+        monkeypatch.setattr(filedialog, 'askdirectory', lambda **kwargs: str(tmp_path))
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+        button = next(w for w in descendants(root) if w.winfo_class() == 'TButton' and w.cget('text') == 'Compare auto')
+        button.invoke()
+        deadline = time.monotonic()+15
+        while app.busy and time.monotonic() < deadline:
+            root.update()
+            time.sleep(.01)
+        assert not app.busy
+        folder, = tmp_path.glob('auto_test_v28_*')
+        saved = json.loads((folder/'auto_settings_and_timings.json').read_text())
+        assert saved['manual']['options']['auto_strength'] is False
+        assert saved['automatic']['options']['auto_strength'] is True
+        assert saved['manual']['options']['faint_continuity'] is False
+        assert saved['automatic']['options']['faint_continuity'] is False
+        assert saved['source_protection_check']['changed_after_palette'] == 0
+        assert (folder/'share_auto_test.zip').exists()
+        assert (folder/'03_auto_same_palette.png').exists()
+        assert 'Auto:' in app.result_info.get()
+    finally:
+        close_app(root)

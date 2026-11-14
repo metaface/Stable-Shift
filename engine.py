@@ -1,4 +1,4 @@
-"""Stable Shift v2.1 — non-generative image restoration.
+"""Stable Shift v2.8 — non-generative image restoration.
 
 The reference supplies palette information only in Restore Quality. Structural analysis and optional V2 surface cleanup use the edited/denoised image. No Forge hooks.
 """
@@ -13,7 +13,10 @@ from PIL import Image
 @dataclass
 class Options:
     method: str='CPU BM3D'  # Explicit CPU/GPU BM3D, V2 surface-only, or legacy methods
+    blotch_strength: float=0.0
     source_guard: bool=True
+    faint_continuity: bool=False
+    auto_strength: bool=False
     cleanup: float=0.0
     cleanup_range: float=12.0
     cleanup_luma: float=60.0
@@ -196,11 +199,8 @@ def _palette(clean, restored):
     return array(im)
 
 
-def _restore_quality_base(clean:Image.Image, edited:Image.Image, opts:Options, diagnostics=True, maps=None, source_core=None):
-    raw=array(edited)
-    # Reference geometry never guides restoration. Palette matching alone uses
-    # the clean image; output dimensions always follow the edited image.
-    if maps is None:maps=structure_maps(edited,None,opts.shade_threshold)
+def _denoise_candidate(raw, opts, maps):
+    """Unchanged backend result, before legacy blending and source copy-back."""
     if opts.method=='NLM':
         candidate=_nlm(raw,opts.noise,opts.color_noise)
     elif opts.method=='Boundary constrained':
@@ -214,6 +214,27 @@ def _restore_quality_base(clean:Image.Image, edited:Image.Image, opts:Options, d
         candidate=raw.copy()
     else:
         raise ValueError(f'Unknown method {opts.method}')
+    return candidate
+
+
+def _restore_quality_base(clean:Image.Image, edited:Image.Image, opts:Options, diagnostics=True, maps=None, source_core=None, denoised_candidate=None):
+    raw=array(edited)
+    # Reference geometry never guides restoration. Palette matching alone uses
+    # the clean image; output dimensions always follow the edited image.
+    if maps is None:maps=structure_maps(edited,None,opts.shade_threshold)
+    if denoised_candidate is None:
+        candidate=_denoise_candidate(raw,opts,maps)
+    else:
+        if opts.method not in ('NLM','Boundary constrained','CPU BM3D','BM3D (optional)',
+                                'GPU BM3D','Color only','Region cleanup only'):
+            raise ValueError(f'Unknown method {opts.method}')
+        candidate=np.asarray(denoised_candidate)
+        if candidate.shape!=raw.shape or candidate.dtype!=np.uint8:
+            raise ValueError('Shared denoiser result must match the edited RGB dimensions and uint8 type.')
+        # Each comparison applies its own masks. Never let source copy-back in
+        # one variant mutate the shared, unguarded backend result.
+        candidate=candidate.copy()
+    candidate_snapshot=candidate.copy() if diagnostics else None
     if opts.method in ('Boundary constrained','Color only','Region cleanup only'):
         # Internal barrier already controlled smoothing. Do NOT blend in source
         # pixels afterward, which would undo the user's requested behavior.
@@ -235,6 +256,11 @@ def _restore_quality_base(clean:Image.Image, edited:Image.Image, opts:Options, d
         # BM3D itself has no custom-mask API. Preserve only traced source cores
         # at this handoff; downstream cleanup receives the SAME original mask.
         result[source_core] = raw[source_core]
+    if diagnostics:
+        maps['unprotected_denoise_signed_rgb']=candidate_snapshot.astype(np.int16)-raw.astype(np.int16)
+        maps['unprotected_denoise_change']=np.mean(np.abs(maps['unprotected_denoise_signed_rgb'].astype(np.float32)),axis=2)/16
+        maps['guard_signed_rgb']=result.astype(np.int16)-candidate_snapshot.astype(np.int16)
+        maps['guard_change']=np.mean(np.abs(maps['guard_signed_rgb'].astype(np.float32)),axis=2)/16
     if opts.color_match:
         # The shared LAB color engine already supports differing source sizes.
         result=_palette(clean,result)
@@ -278,12 +304,18 @@ def _gpu_bm3d(rgb, noise, color_noise):
         raise RuntimeError('GPU BM3D could not run. No CPU fallback was performed. Select CPU BM3D or inspect GPU installation/driver compatibility. Details: '+str(exc)) from exc
 
 
-def restore_quality(clean, edited, opts, diagnostics=True, progress=None):
+def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, denoised_candidate=None):
     from time import perf_counter
     from dataclasses import replace, asdict
     from region_cleanup import surface_cleanup, RegionOptions
     from line_protection import trace_source_lines
     from stage_maps import stage_diagnostics
+    from surface_normalization import normalize_surfaces
+    import math
+    if opts.auto_strength and denoised_candidate is not None:
+        raise ValueError('Automatic strength requires a backend run at its estimated settings; a manual cached candidate cannot be reused.')
+    if not math.isfinite(opts.blotch_strength) or not 0 <= opts.blotch_strength <= 100:
+        raise ValueError('Broad correction maximum must be between 0 and 100.')
     start=perf_counter()
     region_options=RegionOptions(opts.cleanup, opts.cleanup_range, opts.cleanup_luma, opts.cleanup_radius).validated()
     if progress:progress('Original image: structure analysis and line tracing')
@@ -291,32 +323,92 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None):
     maps=structure_maps(edited,None,opts.shade_threshold)
     source_core=None
     if opts.source_guard:
-        source_maps=trace_source_lines(original,maps)
+        source_maps=trace_source_lines(original,maps,continue_faint=opts.faint_continuity)
         source_core=source_maps['source_line_core']>.5
         maps.update(source_maps)
+    effective=opts
+    auto_maps={}
+    auto_report={'enabled':False}
+    if opts.auto_strength:
+        from automatic_strength import estimate_strength,limit_cleanup
+        if progress:progress('Automatic strength: measuring native and correlated multiscale scatter')
+        effective,auto_maps,auto_report=estimate_strength(original,opts,source_core)
+        maps.update(auto_maps)
     analyzed=perf_counter()
-    if progress:progress('Denoising: '+opts.method)
-    out,maps=_restore_quality_base(clean,edited,replace(opts,color_match=False),diagnostics=False,
-                                  maps=maps,source_core=source_core)
+    if progress:
+        progress('Fine denoising skipped: '+auto_report['backend_skip_reason']
+                 if auto_report.get('backend_skipped') else 'Denoising: '+opts.method)
+    candidate=original if auto_report.get('backend_skipped',False) else denoised_candidate
+    out,maps=_restore_quality_base(clean,edited,replace(effective,color_match=False),diagnostics=diagnostics,
+                                  maps=maps,source_core=source_core,denoised_candidate=candidate)
+    if opts.auto_strength:
+        handoff=array(out)
+        limited=limit_cleanup(original,handoff,auto_maps['auto_denoise_luminance_strength'],
+                              auto_maps['auto_denoise_chroma_strength'],source_core)
+        if diagnostics:
+            signed=limited.astype(np.int16)-handoff.astype(np.int16)
+            maps['auto_denoise_limit_signed_rgb']=signed
+            maps['auto_denoise_limit_change']=np.mean(np.abs(signed.astype(np.float32)),axis=2)/16
+        auto_report['actual_denoise_mean_rgb_change']=float(np.mean(np.abs(limited.astype(np.float32)-original)))
+        out=Image.fromarray(limited)
     denoised=perf_counter()
     denoised_rgb=array(out)
+    if opts.auto_strength:region_options=RegionOptions(effective.cleanup, opts.cleanup_range, opts.cleanup_luma, opts.cleanup_radius).validated()
     rgb,region_maps,region_report=surface_cleanup(denoised_rgb,region_options,diagnostics,progress,
                                                 protected=source_core)
+    if opts.auto_strength:
+        candidate_stats=region_report.copy()
+        rgb=limit_cleanup(denoised_rgb,rgb,auto_maps['auto_luminance_strength'],auto_maps['auto_chroma_strength'],source_core)
+        actual=rgb.astype(np.int16)-denoised_rgb.astype(np.int16)
+        region_report.update({'candidate_mean_rgb_change':candidate_stats['mean_rgb_change'],
+            'changed_pixels_percent':float(100*np.mean(np.any(actual!=0,axis=2))),
+            'mean_rgb_change':float(np.mean(np.abs(actual.astype(np.float32)))),
+            'automatic_limits_applied':True})
+        if diagnostics:region_maps['v2_changed']=np.mean(np.abs(actual.astype(np.float32)),axis=2)/12
     maps.update(region_maps)
+    local_rgb=rgb
+    rgb,blotch_maps,blotch_report=normalize_surfaces(rgb,effective.blotch_strength,opts.cleanup_range,
+        opts.cleanup_luma,source_core,diagnostics,progress)
+    if opts.auto_strength:
+        candidate_stats=blotch_report.copy()
+        rgb=limit_cleanup(local_rgb,rgb,auto_maps['auto_luminance_strength'],auto_maps['auto_chroma_strength'],source_core)
+        actual=rgb.astype(np.int16)-local_rgb.astype(np.int16)
+        blotch_report.update({'candidate_mean_rgb_change':candidate_stats['mean_rgb_change'],
+            'changed_pixels_percent':float(100*np.mean(np.any(actual!=0,axis=2))),
+            'mean_rgb_change':float(np.mean(np.abs(actual.astype(np.float32)))),
+            'automatic_limits_applied':True})
+        if diagnostics:
+            blotch_maps['blotch_signed_rgb']=actual
+            blotch_maps['blotch_change']=np.mean(np.abs(actual.astype(np.float32)),axis=2)/16
+    maps.update(blotch_maps)
+    if diagnostics:
+        local_signed=local_rgb.astype(np.int16)-denoised_rgb.astype(np.int16)
+        maps['local_cleanup_signed_rgb']=local_signed
+        maps['local_cleanup_change']=np.mean(np.abs(local_signed.astype(np.float32)),axis=2)/16
     cleaned=perf_counter()
     if progress:progress('Reference color correction' if opts.color_match else 'Finishing')
     cleanup_rgb=rgb
-    if opts.color_match:rgb=_palette(clean,rgb)
+    if opts.color_match:
+        if opts.blotch_strength>0:
+            from frozen_palette import freeze_palette
+            rgb=freeze_palette(clean,local_rgb).apply(rgb)
+        else:
+            rgb=_palette(clean,rgb)
     finished=perf_counter()
     if diagnostics:
         maps.update(stage_diagnostics(original,denoised_rgb,cleanup_rgb,rgb))
     diagnostics_finished=perf_counter()
-    maps['report']={'version':'2.1','backend':opts.method,'resolution':list(edited.size),
+    maps['report']={'version':'2.8','backend':opts.method,'resolution':list(edited.size),
         'source_analysis_seconds':analyzed-start,'denoise_seconds':denoised-analyzed,
         'cleanup_seconds':cleaned-denoised,'color_seconds':finished-cleaned,
         'diagnostics_seconds':diagnostics_finished-finished,'total_seconds':diagnostics_finished-start,
         'source_protected_pixels_percent':0. if source_core is None else float(100*np.mean(source_core)),
+        'faint_continuity':opts.faint_continuity,
+        'rescued_trace_pixels':int(np.count_nonzero(maps.get('source_line_rescued',np.zeros((0,0))))),
+        'denoiser_reused':denoised_candidate is not None,
+        'automatic_strength':auto_report,'effective_options':asdict(effective),
         'cleanup_strength':opts.cleanup,'color_match':opts.color_match,'options':asdict(opts),
-        'region_cleanup':region_report,
+        'region_cleanup':region_report,'broad_normalization':blotch_report,
+        'palette_note':'V2.1 field fitted to local-cleanup baseline; not refitted after broad correction.',
         'difference_note':'Total change includes palette correction; it is not a noise map.'}
     return Image.fromarray(rgb),maps
