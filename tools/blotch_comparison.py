@@ -9,10 +9,10 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps, ImageDraw
 
-from engine import restore_quality
-from frozen_palette import freeze_palette
-from surface_normalization import normalize_surfaces
-from stage_maps import save_diagnostics
+from stable_shift.engine import restore_quality
+from stable_shift.frozen_palette import freeze_palette
+from stable_shift.surface_normalization import normalize_surfaces
+from stable_shift.stage_maps import save_diagnostics
 
 
 def export_blotch_comparison(clean, edited, options, directory, progress=None):

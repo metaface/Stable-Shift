@@ -7,9 +7,9 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from engine import Options, restore_quality
-from image_inputs import drop_path, load_image
-from region_cleanup import RegionOptions, surface_cleanup
+from stable_shift.engine import Options, restore_quality
+from stable_shift.image_inputs import drop_path, load_image
+from stable_shift.region_cleanup import RegionOptions, surface_cleanup
 
 
 def test_surface_cleanup_changes_small_variation_and_reduces_error():
@@ -116,7 +116,7 @@ def test_drop_paths_with_spaces_unicode_and_braces(tmp_path):
 
 def test_compare_exports_exact_settings_and_native_crops(tmp_path):
     import json
-    from comparison import export_comparison
+    from stable_shift.comparison import export_comparison
     rng = np.random.default_rng(1)
     edited = Image.fromarray(np.uint8(rng.integers(60, 90, (48, 64, 3))))
     reference = edited.resize((16, 12))

@@ -11,7 +11,7 @@ pytestmark = pytest.mark.skipif(os.name != 'nt' and not os.environ.get('DISPLAY'
 
 def make_app():
     from tkinterdnd2 import TkinterDnD
-    from app import App
+    from stable_shift.app import App
     root = TkinterDnD.Tk()
     app = App(root, dnd_available=True)
     root.update()
@@ -65,7 +65,7 @@ def test_native_drop_slots_theme_and_busy_guard(tmp_path):
 def test_ui_worker_save_and_actual_run_settings(tmp_path, monkeypatch):
     import json
     import numpy as np
-    from app import filedialog, messagebox
+    from stable_shift.app import filedialog, messagebox
     root, app = make_app()
     try:
         def fail(*args, **kwargs):
@@ -107,8 +107,9 @@ def test_ui_worker_save_and_actual_run_settings(tmp_path, monkeypatch):
         close_app(root)
 
 
-def test_ui_blotch_comparison_worker_and_strength(tmp_path, monkeypatch):
-    from app import filedialog, messagebox
+def test_ui_legacy_manual_comparison_worker(tmp_path, monkeypatch):
+    import json
+    from stable_shift.app import filedialog, messagebox
     root, app = make_app()
     try:
         def fail(*args, **kwargs):
@@ -122,28 +123,30 @@ def test_ui_blotch_comparison_worker_and_strength(tmp_path, monkeypatch):
         app.set_image('clean', reference)
         app.set_image('edited', edited)
         app.method.set('Region cleanup only')
-        app.cleanup.set(0)
-        app.blotch_strength.set(70)
-        assert app.opts().blotch_strength == 70
+        app.cleanup.set(70)
+        app.blotch_strength.set(100)
         monkeypatch.setattr(filedialog, 'askdirectory', lambda **kwargs: str(tmp_path))
-        app.compare_blotches()
+        app.compare()
         deadline = time.monotonic()+15
         while app.busy and time.monotonic() < deadline:
             root.update()
             time.sleep(.01)
         assert not app.busy
-        folders = list(tmp_path.glob('blotch_test_v25_*'))
-        assert len(folders) == 1
-        assert (folders[0]/'03_broad_same_palette.png').exists()
-        assert 'Changed protected pixels: 0' in app.result_info.get()
+        folder, = tmp_path.glob('stable_shift_v2_*')
+        assert (folder/'01_color_only.png').exists()
+        assert (folder/'02_surface_only.png').exists()
+        saved = json.loads((folder/'settings_and_timings.json').read_text())
+        assert all(run['options']['auto_strength'] is False for run in saved['runs'])
+        assert all(run['options']['blotch_strength'] == 0 for run in saved['runs'])
+        assert 'Comparison saved:' in app.status.get()
     finally:
         close_app(root)
 
 
 def test_ui_compare_auto_button_exports_both_variants_and_share_archive(tmp_path, monkeypatch):
     import json
-    from app import filedialog, messagebox
-    from test_faint_lines import faint_stroke
+    from stable_shift.app import filedialog, messagebox
+    from tests.test_faint_lines import faint_stroke
     root, app = make_app()
     try:
         def fail(*args, **kwargs):

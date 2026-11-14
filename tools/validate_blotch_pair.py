@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from surface_normalization import normalize_surfaces
+from stable_shift.surface_normalization import normalize_surfaces
 
 
 def replay(directory, out, source_mask=None, strength=None):

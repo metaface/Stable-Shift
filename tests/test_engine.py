@@ -3,7 +3,7 @@ from dataclasses import replace
 import numpy as np
 import cv2
 from PIL import Image
-from engine import Options, restore_quality, preserve_edits, structure_maps
+from stable_shift.engine import Options, restore_quality, preserve_edits, structure_maps
 
 
 def synthetic(w=256,h=256,noise=17):

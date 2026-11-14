@@ -5,10 +5,10 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from engine import Options, restore_quality, structure_maps
-from line_protection import trace_source_lines
-from region_cleanup import RegionOptions, surface_cleanup
-from stage_maps import save_diagnostics, stage_diagnostics
+from stable_shift.engine import Options, restore_quality, structure_maps
+from stable_shift.line_protection import trace_source_lines
+from stable_shift.region_cleanup import RegionOptions, surface_cleanup
+from stable_shift.stage_maps import save_diagnostics, stage_diagnostics
 
 
 def weak_cabin():
@@ -40,7 +40,7 @@ def test_noise_only_does_not_become_a_protected_surface():
 
 
 def test_same_source_mask_survives_denoiser_handoff_and_cleanup(monkeypatch):
-    import engine
+    from stable_shift import engine
     rgb = weak_cabin()
     # Model a denoiser that loses the weak line. This isolates guard wiring from
     # the quality of any one denoiser implementation.
@@ -124,7 +124,7 @@ def test_exports_keep_exact_signs_and_binary_protection(tmp_path):
 
 
 def test_comparison_isolates_source_protection_from_surface_cleanup():
-    from comparison import comparison_plan
+    from stable_shift.comparison import comparison_plan
     runs = comparison_plan(Options(method='GPU BM3D', cleanup=60, source_guard=True))
     assert len(runs) == 4
     assert [(opts.source_guard, opts.cleanup) for _, opts in runs[:3]] == [(False, 0), (True, 0), (True, 60)]

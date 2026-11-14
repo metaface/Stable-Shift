@@ -2,8 +2,8 @@ from dataclasses import replace
 import sys
 import numpy as np
 from PIL import Image
-from engine import Options,restore_quality,_lab
-from test_engine import synthetic
+from stable_shift.engine import Options,restore_quality,_lab
+from tests.test_engine import synthetic
 
 
 def test_reference_does_not_guide_structure():

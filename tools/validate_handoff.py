@@ -7,8 +7,8 @@ import zipfile
 
 from PIL import Image
 
-from engine import Options
-from blotch_comparison import export_blotch_comparison
+from stable_shift.engine import Options
+from tools.blotch_comparison import export_blotch_comparison
 
 
 def main():

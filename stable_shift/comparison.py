@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageOps, ImageDraw
 
-from engine import restore_quality
-from stage_maps import save_diagnostics
+from .engine import restore_quality
+from .stage_maps import save_diagnostics
 
 
 def comparison_plan(options):

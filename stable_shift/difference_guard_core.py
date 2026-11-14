@@ -222,7 +222,7 @@ def restore(reference:Image.Image, edited:Image.Image, settings:Settings|None=No
         # Composite ONLY the new visual objects. Everything else remains the
         # cleaner reference EXACTLY, including fine detail and clean colors.
         # No generic denoise/color transfer is run on the output.
-        from difference_guard_multimap import multi_map_mask
+        from .difference_guard_multimap import multi_map_mask
         if reference.size != target.size:
             raise ValueError('Precise composite needs same-sized, aligned images (no automatic geometry scaling).')
         if s.auto_protect:
