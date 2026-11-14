@@ -1,12 +1,39 @@
-# Stable Shift V2.4 — standalone test build
+# Stable Shift V2.5 — standalone test build
+
+## Current test: retain faint source strokes
+
+Keep your accepted V2.4 denoiser, local-cleanup, broad-cleanup and color settings. Leave source-line tracing enabled. Use **Compare lines** to compare the previous tracer with the updated one; the shared denoiser runs once and the same frozen V2.4 palette field is applied to both outputs.
+
+- `00_v24_before_palette.png`: V2.4 tracing/cleanup before color correction.
+- `01_faint_lines_before_palette.png`: updated tracing with identical cleanup settings.
+- `02_v24_same_palette.png`: V2.4 result with the shared palette field.
+- `03_faint_lines_same_palette.png`: updated result with that same field.
+
+Judge 02 versus 03; inspect 00 versus 01 to isolate processing before palette conversion. Both variants run local and broad cleanup separately, because their source barriers differ. Only the backend denoiser result and palette field are shared.
+
+The tracer uses the original edited image. Weaker edge samples can be retained between compatible old trace segments, with anchors in both tangent directions within 12 native pixels. Eight directions follow slanted strokes. Gradient polarity and dominant color channel must match; source coherence and tangent evidence are still required. A newly retained point never supplies an anchor for another point. Points already covered by the old protection band do not widen that band. Original RGB is copied at the denoiser handoff and the updated mask is carried through the existing cleanup stages.
+
+This is not a pen that fills missing strokes. Blank source gaps and unsupported longer gaps remain; originally faint lines and contrast compressed by palette conversion may still look faint. No antialiasing or automatic stroke darkening is applied.
+
+New maps:
+
+- `source_line_trace_base`: V2.4 trace before continuation.
+- `source_line_rescued`: additional observed weak source edge points.
+- `source_line_added_core`: additional protection only.
+
+Existing `source_line_trace` and `source_line_core` include the added protection. The comparison saves `v24_` and `v25_` maps, plus settings/timings and checks on previous/new source cores. Signed stage maps include the actual shared palette application and still sum to total change.
+
+**share_line_test.zip** is the file to upload for feedback. It includes all four full-size outputs, `edited_source.png`, source masks and settings. Large diagnostic NPZ files and extra previews are excluded. The original edited RGB is included so subsequent source-tracer tests can use the actual input. If those full-resolution files exceed 30 MiB together, individual files are retained and the report records why no compact ZIP was created.
+
+Run/Preview enables faint continuity by default. Its palette field is fitted normally from its own pre-broad local-cleanup result. The comparison freezes the V2.4 baseline field to isolate line retention, so a small difference between the normal preview and its controlled comparison is possible. Advanced/API users can select the previous tracer with `Options(faint_continuity=False)`.
 
 ## Current focus: local blotch correction
 
 V2.4 revises the extra V2.3 blotch stage. V2.1 source-line tracing, local cleanup, color estimation, edit replacement, BM3D adapters and dependencies are retained. The unmerged V2.2 palette experiment is excluded.
 
-### One-variable comparison
+### Retained V2.4 surface cleanup
 
-Keep the SAME denoiser, noise, color, local-cleanup, brightness and similarity settings as your previous test, with source-line tracing enabled. Start **Broad correction maximum** at 70 and choose **Compare blotches**. A repeat at 100 checks the maximum-strength failures reported for V2.3.
+The V2.4 blotch pass is retained without algorithm or default changes. The new toolbar comparison targets line protection; keep whichever broad strength you preferred. The older blotch-comparison export remains available through its Python module.
 
 The shared BM3D/local-cleanup baseline runs once. Compare these native-resolution outputs:
 
@@ -40,7 +67,7 @@ The existing Brightness cleanup control scales the extra pass's L correction too
 
 Comparison reports include exact protected-pixel changes before/after the shared palette, plus change immediately beside the core. Unchanged stroke pixels alone do not prove that a stroke keeps its contrast. Raw maps retain native values; previews use fixed legend scales.
 
-See [VALIDATION.md](VALIDATION.md) for the supplied comparison replay, synthetic controls, full-resolution beach control, timing and limitations. The optional `validate_blotch_pair.py` replays exported pre-palette pairs without BM3D; normal use is through the launcher and Compare blotches.
+See [VALIDATION.md](VALIDATION.md) for the supplied comparison replay, synthetic controls, full-resolution beach control, timing and limitations. The optional `validate_blotch_pair.py` replays exported pre-palette pairs without BM3D; normal use is through the launcher and Compare lines.
 
 ## V2.1 source-line correction (retained)
 

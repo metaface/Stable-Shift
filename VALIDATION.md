@@ -1,67 +1,64 @@
-# V2.4 validation
+# V2.5 validation
 
-## Scope
+## Scope and retained controls
 
-V2.4 changes the extra blotch pass from V2.3. The V2.1 source-line tracer, local sampler, legacy palette/core, edit detection, BM3D adapters and dependencies are byte-identical to the accepted V2.1 files. The frozen-palette wrapper and comparison export from V2.3 are retained. V2.2's unmerged palette experiment is excluded.
+This test changes source tracing to retain faint segments between compatible existing anchors. V2.4's `region_cleanup.py`, `surface_normalization.py`, `frozen_palette.py`, palette/core modules, input loader and requirements are byte-identical. CPU/GPU BM3D implementations and parameters are unchanged; backend dispatch is factored out so a controlled comparison can reuse one unguarded result.
 
-The regional quadratic is now only a detrending aid. A normalized, native-resolution local residual estimate is added back, so wider nonlinear shading is retained. A 12-pixel smooth boundary taper limits contrast changes near protected lines. Local confidence no longer becomes almost certain just because the user selects LAB similarity 40. Requested corrections are capped at 3 LAB units before RGB conversion; final RGB channels stay within the observed 49×49 source neighborhood envelope.
+The comparison switches `faint_continuity` only. Both variants get the same backend candidate, local/broad cleanup settings and frozen palette field fitted from the V2.4 baseline's pre-broad local result. Source barriers can change the cleanup result, which is the intended consequence of protecting a previously missed segment.
+
+## Supplied 70/100 archives
+
+Both smaller archives were read successfully at native 2048×2048 resolution. They use GPU BM3D, denoise 100/100, local cleanup 100, LAB range 40, brightness cleanup 100, radius 16, hard/soft guards 100/60 and shading sensitivity 35. Broad maximum is the only configured difference: 70 versus 100.
+
+Both masks contain 551,687 protected pixels (13.153% of the image), with identical original trace/core geometry. In each run the extra broad pass changes **zero** protected pixels, and its maximum channel change within three pixels of the core is **one RGB level**. The recorded mean near-core changes are 0.000974 at 70 and 0.002900 at 100. Broad mean RGB changes are 0.371842 and 0.559987 respectively.
+
+Native crops of cabin lines above the window, the face, the exposed-torso/overalls edge, denim seams and trees were inspected. Some weak-segment coverage is interrupted in the earlier mask/shared baseline. Palette conversion also compresses some faint local contrasts; protected adjacent-pixel statistics are not counts of lost strokes. The new test targets missed source segments and leaves that palette behavior fixed.
+
+The archives contain processed baseline pixels and the original trace/core, **not the original edited RGB input**. Candidate-geometry exploration used the supplied original anchors with a processed-image guide, explicitly as a proxy. That probe suggested additional protection over about 0.291% of the image, but it is not an end-to-end restoration or a measured recovery of the user's original strokes. No new result image for that exact original/GPU run is claimed. The new compact export includes `edited_source.png` so future tracing tests can use the actual source.
 
 ## Automated checks
 
-Run under an available desktop/display:
+Full suite under the test display: **59 passed, 1 skipped**. The skipped test requires an old historical local fixture. After final cache-validation and version-label changes, the affected line/GUI tests were rerun: **11 passed**.
 
 ```text
 DISPLAY=:100 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python -m pytest -q
 ```
 
-The suite covers CPU BM3D, explicit GPU failures, source-line linking/propagation, reference independence, local cleanup, stage accounting, palette equivalence, native Tk file drops, themes, saved settings and both GUI workers. The historical fixture test remains skipped when its old local fixture is absent.
+New checks cover:
 
-**51 passed, 1 skipped** in the final full suite.
+- A synthetic low-contrast stroke whose middle fails the old confidence threshold gains full source-core coverage across that middle. Previously protected pixels are retained.
+- A blank source gap is not drawn into a stroke, and one-ended faint tails do not grow.
+- Opposite gradient polarities cannot supply a bridge; slanted strokes work beyond a 45-degree grid.
+- Pure noisy flat input gains less than 1% additional protection in the controlled noise test.
+- A shared-denoiser comparison recovers the known weak stroke at the source RGB while the old variant visibly loses contrast. The backend runs once, and its cached array is not mutated.
+- The comparison changes zero previous core pixels before/after the shared palette; new core pixels retain exact source RGB before color correction.
+- Saved signed denoise, cleanup and palette residuals sum exactly to total change.
+- Compact ZIP contents include full outputs, masks, settings and edited source, and exclude large NPZ files.
+- The actual native Tk **Compare lines** button completes its worker, exports both variants and creates the share ZIP.
 
-New regression checks cover nonlinear shadows, repeated processing of clean shading, bounded local output colors, and the immediate surroundings of a weak protected stroke. The saved-pair replay is tested with and without an actual source mask.
+Retained tests cover CPU BM3D behavior, explicit GPU failures, source protection, V2.4 shading/blotch regressions, palette equivalence, input/reference independence, native file-drop callbacks, themes, image sizes and saved settings.
 
-Controlled results:
+A separate native 128×128 CPU BM3D exercise compared the accepted V2.4 implementation with V2.5 at `faint_continuity=False`, using noise/local/broad strength 100 and LAB range 40. **Result RGB and source masks matched byte-for-byte.**
 
-- Correlated blotches on a known clean shaded surface: RGB MSE **38.112 → 14.846 at 70** (61% reduction), and **→ 9.053 at 100** (76% reduction). These are synthetic error reductions, not percentages of noise removed from the supplied artwork.
-- A clean quadratic-shading control stays byte-identical through five passes.
-- A clean nonlinear shadow at strength 100/range 40 retains **23.927 of its original 23.975 LAB-L contrast**; mean brightness change is 0.441 LAB-L.
-- Weak protected stroke pixels remain exact, with at most one RGB level of change in the tested three-pixel surroundings.
+## Full-resolution original-image comparison
 
-## Supplied V2.3 comparison
+Used the supplied beach reference and edited hat/ribbon input at their original 2048×2048 size. No generative re-render or additional character reference was used as ground truth. This is an actual original-input CPU comparison, unlike the processed-guide pants probe above. Artwork is not committed to the repository.
 
-Used the user's native 2048×2048 `00_v21_before_palette.png` and `01_broad_before_palette.png`, and read the JSON settings as data. The original settings were GPU BM3D 100/100, local cleanup 100, LAB range 40, brightness cleanup 100, broad maximum 100. This executor has no GPU; the saved shared baseline lets us isolate the extra stage without replacing the user's denoiser run.
+Settings match the stress test: CPU BM3D 100/100, local cleanup 100, brightness cleanup 100, LAB range 40, radius 16, broad maximum 100, source tracing on and guards 100/60.
 
-The actual original source-core mask was not in the supplied ZIP. The replay freezes **all unchanged pixels from the submitted pair**: 24.646% of the image. This includes every originally protected pixel plus some quiet pixels. It is stricter than the original 13.153% mask, and can understate cleanup. It does not establish an exact end-to-end rerun.
+- Backend ran **once**, taking 323.02 s on this development CPU.
+- Old/new source analysis took **1.03 / 2.09 s**.
+- Old/new local-plus-broad cleanup took **12.57 / 12.21 s**.
+- Whole comparison processing before export took **353.87 s**.
+- Protected pixels increased **875,602 → 893,108**, adding **17,506 pixels / 0.417% of the image**.
+- Previous core pixels removed: **0**.
+- Previous core RGB changed: **0 before palette and 0 after the shared field**.
+- New core pixels differing from original source before palette: **0**.
+- Mean source-RGB error on the added pixels was **4.700/255 in the old result and 0 in the new result**. Exact source copying guarantees the latter; it is not a percentage of artistic detail restored or noise removed.
+- Mean absolute final RGB difference between variants was **0.184/255**. Changes extend outside the added core because the existing cleanup uses the updated barriers; cleanup settings and algorithms are fixed.
+- Signed stage accounting was checked on both full exported NPZ files and matched exactly.
+- The generated compact ZIP is **24.33 MiB**, below the download tool's 32-MiB limit.
 
-At maximum 100, the local candidate:
+Native crops of hat weave, flower/ribbon outlines, fur and crystal facets were inspected. Changes are targeted and modest; residual noise and sparkle halos remain. Keeping the source exactly also keeps any noise embedded in that source stroke.
 
-- Takes about **6.1 seconds** on this development CPU.
-- Changes 36.884% of pixels, with a mean absolute RGB change of 0.375/255.
-- Changes **zero** pixels in the conservative frozen set.
-- Produces **zero** output pixels with a channel outside the observed 49×49 source envelope. The submitted V2.3 result had 278,880 such pixels; that count is not a count of visible black dots.
-- Has native pre-palette L changes from **−2.417 to +2.545**, versus V2.3's **−13.654 to +15.210**.
-
-Native crops of denim, background trees, cabin/window, foreground-tree shading and the eye were visually inspected. The candidate keeps wider shading and avoids the abrupt added rims and eye patches seen in the submitted V2.3 output; remaining blotches are visible. A display approximation derived from the submitted before/after palette pair was used for additional visual inspection only. All measurements above use the actual pre-palette pixels; the original palette field cannot be recovered exactly from the supplied PNGs.
-
-To replay an extracted comparison without rerunning BM3D:
-
-```text
-python validate_blotch_pair.py --input "PATH/comparison" --out "PATH/replay"
-```
-
-Optionally add `--source-mask "PATH/shared_source_line_core.png"` from that exact run. With no mask, the conservative unchanged-pixel superset is explicitly recorded. The tool exports a pre-palette candidate and JSON report; it does not reconstruct an original input or apply an estimated palette.
-
-## Full-resolution beach control
-
-Reused the previously computed 2048×2048 CPU BM3D/V2.1 local-cleanup baseline and **actual original source-core mask** from the two supplied beach inputs. No generative output or additional character reference was used as ground truth. The original inputs/artwork are not committed.
-
-Both variants use the actual V2.1 frozen field. Its baseline output again matches the original V2.1 palette function byte-for-byte.
-
-| Broad maximum | Stage time | Pixels changed | Mean RGB change /255 | Changed core before/after palette | Max RGB change within 3 px of core |
-| --- | --- | --- | --- | --- | --- |
-| 70 | 6.37 s | 27.108% | 0.231 | 0 / 0 | 1 |
-| 100 | 5.95 s | 32.172% | 0.345 | 0 / 0 | 1 |
-
-Times cover the extra CPU stage, not BM3D or export. Native fur crops were inspected. Cleanup is modest and existing sparkle halos remain. GPU execution and Windows Explorer end-to-end behavior are not verified in this Linux executor; the existing adapters/dependencies are unchanged.
-
-Exact protected RGB and bounded local colors are useful constraints, not proof that all real linework, artistic shading or texture is classified correctly. The next visual comparison remains necessary before merging this test.
+GPU execution and Windows Explorer end-to-end behavior remain unverified in this Linux executor. Unsupported long gaps, absent source strokes and contrast compressed by palette conversion can still remain faint. This is a test of source retention, not semantic line reconstruction, stroke enhancement or antialiasing.

@@ -132,9 +132,49 @@ def test_ui_blotch_comparison_worker_and_strength(tmp_path, monkeypatch):
             root.update()
             time.sleep(.01)
         assert not app.busy
-        folders = list(tmp_path.glob('blotch_test_v24_*'))
+        folders = list(tmp_path.glob('blotch_test_v25_*'))
         assert len(folders) == 1
         assert (folders[0]/'03_broad_same_palette.png').exists()
         assert 'Changed protected pixels: 0' in app.result_info.get()
+    finally:
+        close_app(root)
+
+
+def test_ui_compare_lines_button_exports_both_variants_and_share_archive(tmp_path, monkeypatch):
+    import json
+    from app import filedialog, messagebox
+    from test_faint_lines import faint_stroke
+    root, app = make_app()
+    try:
+        def fail(*args, **kwargs):
+            pytest.fail('Unexpected UI error: '+str(args))
+        monkeypatch.setattr(messagebox, 'showerror', fail)
+        monkeypatch.setattr(messagebox, 'showwarning', fail)
+        path = tmp_path/'faint source.png'
+        Image.fromarray(faint_stroke()[0]).save(path)
+        app.set_image('clean', path)
+        app.set_image('edited', path)
+        app.method.set('Region cleanup only')
+        app.cleanup.set(100)
+        app.blotch_strength.set(100)
+        monkeypatch.setattr(filedialog, 'askdirectory', lambda **kwargs: str(tmp_path))
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+        button = next(w for w in descendants(root) if w.winfo_class() == 'TButton' and w.cget('text') == 'Compare lines')
+        button.invoke()
+        deadline = time.monotonic()+15
+        while app.busy and time.monotonic() < deadline:
+            root.update()
+            time.sleep(.01)
+        assert not app.busy
+        folder, = tmp_path.glob('line_test_v25_*')
+        saved = json.loads((folder/'line_settings_and_timings.json').read_text())
+        assert saved['shared_denoiser_ran_once'] is True
+        assert saved['baseline']['options']['faint_continuity'] is False
+        assert saved['continued']['options']['faint_continuity'] is True
+        assert (folder/'share_line_test.zip').exists()
+        assert 'Existing protected pixels changed: 0' in app.result_info.get()
     finally:
         close_app(root)

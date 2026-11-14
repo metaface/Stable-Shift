@@ -49,7 +49,8 @@ def save_diagnostics(maps, directory, prefix=''):
     directory.mkdir(parents=True, exist_ok=True)
     exact = {}
     binary = {'source_line_candidates', 'source_line_seeds', 'source_line_trace',
-              'source_line_core', 'v2_boundaries', 'blotch_boundaries'}
+              'source_line_core', 'source_line_trace_base', 'source_line_rescued',
+              'source_line_added_core', 'v2_boundaries', 'blotch_boundaries'}
     count = 0
     for name, field in maps.items():
         if not isinstance(field, np.ndarray):
@@ -80,7 +81,7 @@ def save_diagnostics(maps, directory, prefix=''):
     draw.text((20, 90), 'Binary protection maps: black = unprotected; white = protected.', fill='white')
     draw.text((20, 113), 'Colors visualize numbers. They do not identify the hue or type of noise.', fill='white')
     guide.save(directory/(prefix+'MAP_LEGEND.png'))
-    note = '''# Diagnostic map meanings — V2.4 (V2.1 maps retained)
+    note = '''# Diagnostic map meanings — V2.5 (V2.4 cleanup retained)
 
 - blotch_boundaries: actual original/local cleanup barriers used to partition surfaces. White = excluded from broad correction.
 - blotch_automatic_amount: confidence-limited correction amount, 0–1, before the separate luminance multiplier. This is not semantic certainty.
@@ -90,6 +91,9 @@ def save_diagnostics(maps, directory, prefix=''):
 - local_cleanup_change / local_cleanup_signed_rgb: existing local cleanup only. Local plus blotch signed residuals sum to the combined cleanup_signed_rgb.
 - source_line_confidence: original hard/soft evidence before denoising; 0–1.
 - source_line_seeds / candidates / trace: detected strong seeds, supported weak candidates and linked lines. Black/white, not a color probability.
+- source_line_trace_base: original V2.4 trace before faint-segment continuation.
+- source_line_rescued: observed faint source edge pixels retained between compatible traced anchors; no blank gaps are drawn.
+- source_line_added_core: additional pixel protection only. Previously protected pixels are retained.
 - source_line_core: actual original-pixel protection at the denoiser handoff, and the SAME mask passed into cleanup barriers. White pixels retain original RGB before final palette correction.
 - hard / soft / guard: legacy BM3D/NLM evidence and blending. They are not the V2.1 source-line core. In legacy Boundary constrained, guard summarizes requested edge weights, not a separate copy-back operation.
 - v2_boundaries: actual combined cleanup exclusions from carried source lines AND locally detected cleanup boundaries. White = excluded. The source core can be present even if the denoised image's local gradient has disappeared.

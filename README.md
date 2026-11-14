@@ -2,22 +2,20 @@
 
 Standalone cleanup/color-restoration experiments for Stable Diffusion outputs.
 
-## V2.4 — local blotch correction
+## V2.5 — faint-line continuity
 
-This test revises the extra blotch pass that caused outlines, eye patches and lost shading in V2.3. It includes the accepted V2.1 line tracing and palette behavior. Download this branch directly; merging the earlier experimental branches is unnecessary.
+The current test targets faint or interrupted strokes. It retains V2.4's accepted blotch cleanup and color-estimation algorithms.
 
-1. Download this branch's ZIP and extract it. Keep your working V2.1 folder separately.
-2. Run **START_Difference_Guard.bat** and load/drop the same reference and edited image.
-3. Use the same denoiser and existing cleanup settings as your previous comparison. Leave source-line tracing enabled.
-4. Start **Broad correction maximum** at **70** and select **Compare blotches**. You can repeat at **100** to check the previous failure cases.
-5. Compare **02_v21_same_palette.png** with **03_broad_same_palette.png** at native resolution. The **00/01** pair isolates cleanup before color correction.
+1. Download this branch's ZIP and extract it separately. Run **START_Difference_Guard.bat**.
+2. Load/drop the usual edited image and color reference. Keep the cleanup/denoiser settings you liked, including broad correction 100 if that was your preferred result.
+3. Leave **Trace source lines** enabled and choose **Compare lines**.
+4. Compare **02_v24_same_palette.png** with **03_faint_lines_same_palette.png** at native resolution. The 00/01 pair isolates processing before color correction.
+5. To send the test back, upload **share_line_test.zip** from the comparison folder. It contains full-size outputs, the original edited RGB, line masks and settings; large NPZ maps stay outside it. A share ZIP is created when those files fit below 30 MiB.
 
-The new pass smooths local residual patches while retaining broader shading. It fades its correction beside protected edges, rejects heterogeneous neighborhoods even at a permissive similarity setting, limits each color move, and prevents output channels from exceeding the observed local source range. Cleanup is deliberately more restrained than V2.3's regional surface replacement.
+The updated tracer retains weaker source edge pixels between matching traced segments, using short tangent corridors and matching gradient polarity. It adds protection only where the previous protection band had a hole. Existing protected pixels are retained, and added pixels cannot seed further growth. Blank gaps are not redrawn.
 
-**BM3D runs once per comparison.** Both outputs receive one frozen V2.1 palette field fitted from the shared baseline. The source tracer, existing local cleanup and color estimator are held fixed. Reports now include changes immediately beside protected lines as well as exact changes on the lines themselves; unchanged line pixels alone do not prove that a line remains visible.
+**The comparison runs the denoiser once.** Both variants use the same candidate, cleanup settings and frozen V2.4 baseline palette field. The only switched feature is faint-segment continuation. Reports count added protection and verify that the previous core stays unchanged. Run/Preview uses the updated tracing by default; its palette is fitted normally from that run's local-cleanup result.
 
-Development checks used the supplied full-resolution comparison, a cached full-resolution beach baseline with its actual source mask, and controlled blotch/shading tests. The supplied comparison lacks the original source mask, so that replay conservatively freezes every pixel V2.3 left unchanged. It is a cleanup-only replay, not a reproduction of the entire original run. See [VALIDATION.md](VALIDATION.md) for measured results and limits.
+This is targeted protection, not line enhancement or reconstruction. A stroke absent from the edited source, a long unsupported gap, or contrast compressed by palette conversion can still remain faint. Some noise inside protected bands remains too.
 
-This still cannot reliably distinguish every intentional texture from a blotch. Some noise, protected fringes and sparkle halos will remain. Automatic estimation applies to the extra blotch pass; BM3D strengths are not automatically calibrated. No antialiasing, generative restoration, lighting progression or Forge integration is included.
-
-Only the edited image supplies structure; the reference supplies colors. Drag/drop, system/dark/light themes and CPU/GPU BM3D remain available. See [STANDALONE.md](STANDALONE.md) for installation, controls and diagnostics.
+Drag/drop, system/dark/light themes, CPU/GPU BM3D and Preserve Edits are retained. No antialiasing, generative restoration or lighting controls are added. See [VALIDATION.md](VALIDATION.md) for measured checks and limits, and [STANDALONE.md](STANDALONE.md) for installation and diagnostics.

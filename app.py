@@ -38,7 +38,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.4 — Local Blotch Test')
+        root.title('Stable Shift V2.5 — Faint Line Test')
         root.geometry('1400x940')
         root.minsize(1040, 760)
         self.images = {'clean': None, 'edited': None}
@@ -85,7 +85,7 @@ class App:
             button.pack(side='left', padx=(0, 7))
             self.open_buttons[key] = button
         ttk.Button(toolbar, text='Run / Preview', command=self.run).pack(side='right')
-        ttk.Button(toolbar, text='Compare blotches', command=self.compare_blotches).pack(side='right', padx=7)
+        ttk.Button(toolbar, text='Compare lines', command=self.compare_lines).pack(side='right', padx=7)
         ttk.Button(toolbar, text='Legacy comparison', command=self.compare).pack(side='right', padx=7)
         ttk.Button(toolbar, text='Save PNG + timings', command=self.save).pack(side='right', padx=7)
         ttk.Button(toolbar, text='Save maps', command=self.save_maps).pack(side='right', padx=7)
@@ -121,7 +121,7 @@ class App:
         broadrow = ttk.Frame(controls)
         broadrow.pack(fill='x', pady=5)
         self._scale(broadrow, 'Broad correction maximum (local Auto; 0 = off)', self.blotch_strength, 0, 100, 0, 0)
-        ttk.Label(broadrow, text='Current test: Compare blotches uses one denoised base and the same V2.1 palette.').grid(row=0, column=1, padx=10, sticky='w')
+        ttk.Label(broadrow, text='Current test: Compare lines holds cleanup settings and palette fixed.').grid(row=0, column=1, padx=10, sticky='w')
         self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
         ag = ttk.Frame(self.advanced)
         ag.pack(fill='x')
@@ -360,6 +360,33 @@ class App:
                 self.queue.put(('error', (str(exc), traceback.format_exc())))
         Thread(target=worker, daemon=True).start()
 
+    def compare_lines(self):
+        if self.busy:
+            return
+        if self.mode.get() != 'Restore Quality':
+            messagebox.showinfo('Compare lines', 'Use Restore Quality for the faint-line comparison.')
+            return
+        try:
+            clean, edited, opts = self.snapshot()
+            if not opts.source_guard:
+                raise ValueError('Enable Trace source lines before comparing.')
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Inputs/settings', str(exc))
+            return
+        parent = filedialog.askdirectory(title='Choose parent folder for a new line comparison')
+        if not parent:
+            return
+        directory = Path(parent) / datetime.now().strftime('line_test_v25_%Y%m%d_%H%M%S_%f')
+        self.begin('Preparing line comparison; denoising runs once')
+        def worker():
+            try:
+                from line_comparison import export_line_comparison
+                summary = export_line_comparison(clean, edited, opts, directory, self.progress)
+                self.queue.put(('lines_compared', (directory, summary)))
+            except Exception as exc:
+                self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
     def compare_blotches(self):
         if self.busy:
             return
@@ -376,7 +403,7 @@ class App:
         parent = filedialog.askdirectory(title='Choose parent folder for a new blotch comparison')
         if not parent:
             return
-        directory = Path(parent) / datetime.now().strftime('blotch_test_v24_%Y%m%d_%H%M%S_%f')
+        directory = Path(parent) / datetime.now().strftime('blotch_test_v25_%Y%m%d_%H%M%S_%f')
         self.begin('Preparing blotch comparison; denoising runs once')
         def worker():
             try:
@@ -440,6 +467,12 @@ class App:
                     broad = summary['broad_correction']['seconds']
                     check = summary['line_preservation_check']['changed_after_palette']
                     self.result_info.set(f'Shared preprocessing: {shared:.2f}s | Broad correction: {broad:.2f}s | Changed protected pixels: {check}')
+                elif kind == 'lines_compared':
+                    directory, summary = data
+                    share = ' | Share: '+summary['share_zip'] if summary['share_zip'] else ''
+                    self.status.set('Line comparison saved: '+str(directory)+share)
+                    check = summary['line_preservation_check']
+                    self.result_info.set(f'Shared denoise: {summary["shared_denoise_seconds"]:.2f}s | Added protected pixels: {check["additional_protected_pixels"]} | Existing protected pixels changed: {check["v24_core_changed_after_palette"]}')
                 elif kind == 'installed':
                     self.status.set(data)
                 elif kind == 'error':
