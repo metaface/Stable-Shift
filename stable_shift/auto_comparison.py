@@ -14,6 +14,8 @@ from .stage_maps import save_diagnostics
 
 
 def export_auto_comparison(clean, edited, options, directory, progress=None):
+    requested_options = asdict(options)
+    options = replace(options, color_method='Classic', antialias_strength=0)
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     started = perf_counter()
@@ -50,6 +52,7 @@ def export_auto_comparison(clean, edited, options, directory, progress=None):
         maps['report'].update({
             'options': asdict(replace(options, auto_strength=enabled)),
             'color_match': options.color_match,
+            'color_correction': {'requested_method': 'Classic', 'selected_method': 'Classic' if options.color_match else 'Off'},
             'palette_note': 'Automatic comparison uses the same manual-baseline V2.4 palette field for both variants.',
             'palette_timing_note': 'Applied after both variants; recorded once as paired_palette_seconds.',
         })
@@ -58,7 +61,8 @@ def export_auto_comparison(clean, edited, options, directory, progress=None):
     auto_core = auto_maps.get('source_line_core', np.zeros(source.shape[:2])) > .5
     common = manual_core & auto_core
     summary = {
-        'version': '2.8', 'options': asdict(options),
+        'version': '2.9', 'options': asdict(options), 'requested_options': requested_options,
+        'finishing_note': 'Compare auto keeps the shared Classic palette field and disables AA regardless of finishing controls.',
         'comparison': 'Same source, manual ceilings versus multiscale automatic candidate strengths and spatial limits',
         'manual': manual_maps['report'], 'automatic': auto_maps['report'],
         'denoiser_note': 'Different candidate strengths require separate backend runs. Automatic skips only when native and eligible coarse cues do not justify denoising.',

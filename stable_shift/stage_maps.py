@@ -9,14 +9,17 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageOps
 
 
-def stage_diagnostics(original, denoised, cleaned, final):
+def stage_diagnostics(original, denoised, cleaned, final, *, colored=None):
+    if colored is None:
+        colored = final
     pairs = {'denoise': (original, denoised), 'cleanup': (denoised, cleaned),
-             'palette': (cleaned, final), 'total': (original, final)}
+             'palette': (cleaned, colored), 'antialias': (colored, final),
+             'total': (original, final)}
     maps = {}
     for name, (before, after) in pairs.items():
         signed = after.astype(np.int16)-before.astype(np.int16)
         maps[name+'_signed_rgb'] = signed
-        # All four stage heatmaps use the SAME fixed scale, not per-map maxima.
+        # All stage heatmaps use the SAME fixed scale, not per-map maxima.
         maps[name+'_change'] = np.mean(np.abs(signed.astype(np.float32)), axis=2)/16
     # Retain the old key, but explicitly label its total-change semantics.
     maps['difference'] = maps['total_change']*(16/70)
@@ -81,7 +84,7 @@ def save_diagnostics(maps, directory, prefix=''):
     draw.text((20, 90), 'Binary protection maps: black = unprotected; white = protected.', fill='white')
     draw.text((20, 113), 'Colors visualize numbers. They do not identify the hue or type of noise.', fill='white')
     guide.save(directory/(prefix+'MAP_LEGEND.png'))
-    note = '''# Diagnostic map meanings — V2.8 bright surface permissions
+    note = '''# Diagnostic map meanings — V2.9 color and optional antialiasing
 
 - auto_luminance_strength / auto_chroma_strength: source-derived permission, 0–1, applied to each local/broad candidate correction before palette matching. These fields can reduce but never increase the requested cleanup. They are not noise probabilities.
 - auto_denoise_luminance_strength / auto_denoise_chroma_strength: permission applied to the guarded backend handoff. These allow a strong candidate in noisy colored interiors while retaining quieter gray structure elsewhere.
@@ -108,7 +111,8 @@ def save_diagnostics(maps, directory, prefix=''):
 - v2_boundaries: actual combined cleanup exclusions from carried source lines AND locally detected cleanup boundaries. White = excluded. The source core can be present even if the denoised image's local gradient has disappeared.
 - denoise_change: original edited input → denoiser + guards + automatic spatial limits handoff.
 - cleanup_change: that handoff → V2 surface cleanup, BEFORE reference color correction.
-- palette_change: cleaned image → final reference color correction ONLY.
+- palette_change: cleaned image → reference color correction ONLY, before optional antialiasing.
+- antialias_change: post-color image → optional final antialiasing. Zero with AA off.
 - total_change: original edited input → final output. This is NOT a detected-noise map.
 - difference: compatibility alias for total change, scaled to 70 RGB levels instead of 16. Prefer the separate stage maps.
 - *_signed_rgb: native-resolution int16 RGB differences, AFTER minus BEFORE, in diagnostics_raw.npz. All signs and values are retained. Their previews use blue for negative, gray for zero, orange for positive, saturating at +/-16 levels, and may be resized.
@@ -118,7 +122,7 @@ def save_diagnostics(maps, directory, prefix=''):
 - v2_fine_weight / sample_support: reconstruction weights and available sample support; 0–1.
 - distance: legacy distance to hard boundaries; its preview saturates at 18 pixels.
 
-Only the edited image supplies structure. Palette changes can still recolor protected line pixels; protection is exact BEFORE palette correction.
+Only the edited image supplies structure. Palette changes can recolor protected line pixels and optional AA can filter them; protection is exact BEFORE color/AA.
 '''
     (directory/(prefix+'MAP_LEGEND.md')).write_text(note, encoding='utf-8')
     if 'report' in maps:

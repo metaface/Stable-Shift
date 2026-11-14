@@ -14,6 +14,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from PIL import Image, ImageTk, ImageOps
+import numpy as np
 
 from .engine import Options, restore_quality, preserve_edits
 from .image_inputs import drop_path, load_image
@@ -38,12 +39,13 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.8 — Bright Surface Cleanup')
+        root.title('Stable Shift V2.9 — Color and Optional Antialiasing')
         root.geometry('1400x940')
         root.minsize(1040, 760)
         self.images = {'clean': None, 'edited': None}
         self.paths = {}
         self.result = None
+        self.pre_antialias = None
         self.maps = {}
         self.queue = Queue()
         self.busy = False
@@ -56,6 +58,9 @@ class App:
         self.method = tk.StringVar(value=default_method())
         self.theme = tk.StringVar(value='System')
         self.palette = tk.BooleanVar(value=True)
+        self.color_method = tk.StringVar(value='Classic')
+        self.aa_enabled = tk.BooleanVar(value=False)
+        self.aa_strength = tk.DoubleVar(value=35)
         self.source_guard = tk.BooleanVar(value=True)
         self.automatic = tk.BooleanVar(value=True)
         self.noise = tk.DoubleVar(value=100)
@@ -87,7 +92,7 @@ class App:
             self.open_buttons[key] = button
         ttk.Button(toolbar, text='Run / Preview', command=self.run).pack(side='right')
         ttk.Button(toolbar, text='Compare auto', command=self.compare_auto).pack(side='right', padx=7)
-        ttk.Button(toolbar, text='Legacy manual', command=self.compare).pack(side='right', padx=7)
+        ttk.Button(toolbar, text='Compare colors', command=self.compare_colors).pack(side='right', padx=7)
         ttk.Button(toolbar, text='Save PNG + timings', command=self.save).pack(side='right', padx=7)
         ttk.Button(toolbar, text='Save maps', command=self.save_maps).pack(side='right', padx=7)
         ttk.Label(main, textvariable=self.file_info).grid(row=1, column=0, sticky='ew', pady=(0, 6))
@@ -101,7 +106,7 @@ class App:
             'GPU BM3D', 'CPU BM3D', 'Region cleanup only', 'NLM', 'Boundary constrained', 'Color only'
         ]).pack(side='left', padx=7)
         ttk.Checkbutton(row, text='Automatic strength', variable=self.automatic).pack(side='left', padx=6)
-        ttk.Checkbutton(row, text='Reference color correction (last)', variable=self.palette).pack(side='left', padx=10)
+        ttk.Checkbutton(row, text='Reference color correction', variable=self.palette).pack(side='left', padx=10)
         ttk.Label(row, text='Theme:').pack(side='left', padx=(12, 0))
         theme = ttk.Combobox(row, textvariable=self.theme, state='readonly', width=8, values=['System', 'Dark', 'Light'])
         theme.pack(side='left', padx=6)
@@ -124,6 +129,16 @@ class App:
         broadrow.pack(fill='x', pady=5)
         self._scale(broadrow, 'Broad correction maximum (0 = off)', self.blotch_strength, 0, 100, 0, 0)
         ttk.Label(broadrow, text='Sliders are ceilings in Auto. Compare auto holds the color correction field fixed.').grid(row=0, column=1, padx=10, sticky='w')
+        finishing = ttk.Frame(controls)
+        finishing.pack(fill='x', pady=3)
+        ttk.Label(finishing, text='Color method:').pack(side='left')
+        ttk.Combobox(finishing, textvariable=self.color_method, state='readonly', width=15,
+                     values=['Classic', 'Robust global']).pack(side='left', padx=7)
+        ttk.Checkbutton(finishing, text='Optional edge antialiasing', variable=self.aa_enabled).pack(side='left', padx=7)
+        ttk.Label(finishing, text='Strength:').pack(side='left')
+        ttk.Spinbox(finishing, from_=0, to=100, width=5, textvariable=self.aa_strength).pack(side='left', padx=5)
+        ttk.Button(finishing, text='Preview AA on last result', command=self.preview_antialias).pack(side='left', padx=8)
+        ttk.Label(finishing, text='AA is off in comparisons.').pack(side='left', padx=5)
         self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
         ag = ttk.Frame(self.advanced)
         ag.pack(fill='x')
@@ -136,6 +151,7 @@ class App:
         ttk.Combobox(taskrow, textvariable=self.mode, state='readonly', width=18, values=['Restore Quality', 'Preserve Edits']).pack(side='left', padx=6)
         ttk.Label(taskrow, text='Legacy edit sensitivity:').pack(side='left', padx=8)
         ttk.Spinbox(taskrow, from_=3, to=90, textvariable=self.edit, width=5).pack(side='left')
+        ttk.Button(taskrow, text='Legacy manual comparison', command=self.compare).pack(side='right')
         ttk.Label(self.advanced, text='BM3D/NLM retain V1 edge blending. V2 surface sampling has its own internal boundary constraints.').pack(anchor='w')
 
         installbar = ttk.Frame(main)
@@ -266,6 +282,7 @@ class App:
         self.images[key] = image
         self.paths[key] = str(path)
         self.result = None
+        self.pre_antialias = None
         self.maps = {}
         self.file_info.set(' | '.join(f'{name}: {Path(value).name} ({self.images[name].width} x {self.images[name].height})' for name, value in self.paths.items()))
         self.result_info.set('Input changed. Run again to create a result for this pair.')
@@ -290,7 +307,9 @@ class App:
                        color_match=self.palette.get(), edit_sensitivity=self.edit.get(), cleanup=self.cleanup.get(),
                        cleanup_range=self.cleanup_range.get(), cleanup_luma=self.cleanup_luma.get(),
                        cleanup_radius=self.cleanup_radius.get(), source_guard=self.source_guard.get(),
-                       blotch_strength=self.blotch_strength.get(), auto_strength=self.automatic.get())
+                       blotch_strength=self.blotch_strength.get(), auto_strength=self.automatic.get(),
+                       color_method=self.color_method.get(),
+                       antialias_strength=self.aa_strength.get() if self.aa_enabled.get() else 0)
 
     def snapshot(self):
         if self.images['edited'] is None:
@@ -299,6 +318,8 @@ class App:
             raise ValueError('Load a color reference, or turn reference color correction off.')
         opts = self.opts()
         from .region_cleanup import RegionOptions
+        from .antialias import validate_strength
+        validate_strength(opts.antialias_strength)
         RegionOptions(opts.cleanup, opts.cleanup_range, opts.cleanup_luma, opts.cleanup_radius).validated()
         edited = self.images['edited'].copy()
         clean = self.images['clean'].copy() if self.images['clean'] is not None else edited.copy()
@@ -388,6 +409,57 @@ class App:
         Thread(target=worker, daemon=True).start()
 
 
+    def compare_colors(self):
+        if self.busy:
+            return
+        if self.mode.get() != 'Restore Quality':
+            messagebox.showinfo('Compare colors', 'This comparison is for Restore Quality.')
+            return
+        try:
+            clean, edited, opts = self.snapshot()
+            if self.images['clean'] is None:
+                raise ValueError('Load a color reference for the color comparison.')
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Inputs/settings', str(exc))
+            return
+        parent = filedialog.askdirectory(title='Choose parent folder for a color comparison')
+        if not parent:
+            return
+        directory = Path(parent)/datetime.now().strftime('color_test_v29_%Y%m%d_%H%M%S_%f')
+        self.begin('One cleanup run, then comparing color methods with AA off')
+        def worker():
+            try:
+                from .color_comparison import export_color_comparison
+                summary = export_color_comparison(clean, edited, opts, directory, self.progress)
+                self.queue.put(('colors_compared', (directory, summary)))
+            except Exception as exc:
+                self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
+    def preview_antialias(self):
+        if self.busy:
+            return
+        if self.pre_antialias is None:
+            messagebox.showinfo('Preview AA', 'Run Restore Quality first. AA preview then reuses its post-color result.')
+            return
+        try:
+            strength = self.aa_strength.get() if self.aa_enabled.get() else 0
+            from .antialias import validate_strength
+            validate_strength(strength)
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Antialias strength', str(exc))
+            return
+        pixels, maps = self.pre_antialias, self.maps
+        self.begin('Previewing AA on the last post-color result; no denoiser rerun')
+        def worker():
+            try:
+                from .antialias import refinish_antialias
+                rgb, updated = refinish_antialias(pixels, maps, strength)
+                self.queue.put(('result', (Image.fromarray(rgb), updated)))
+            except Exception as exc:
+                self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
 
     def install(self, package):
         if self.busy:
@@ -424,6 +496,8 @@ class App:
                 self.started = None
                 if kind == 'result':
                     self.result, self.maps = data
+                    signed = self.maps.get('antialias_signed_rgb')
+                    self.pre_antialias = None if signed is None else np.uint8(np.asarray(self.result).astype(np.int16)-signed)
                     report = self.maps['report']
                     parts = [report['backend']]
                     if report.get('automatic_strength', {}).get('enabled'):
@@ -432,6 +506,11 @@ class App:
                     self.result_info.set(' | '.join(parts))
                     region = report.get('broad_normalization', report.get('region_cleanup', {}))
                     self.status.set(f'Finished. Source lines protected {report.get("source_protected_pixels_percent", 0):.1f}% | Broad correction changed {region.get("changed_pixels_percent", 0):.1f}%; mean RGB change {region.get("mean_rgb_change", 0):.2f}/255. Compare native-resolution crops.')
+                    color = report.get('color_correction', {})
+                    if color:
+                        self.status.set(self.status.get()+' | Color: '+color['selected_method']+' | AA '+str(report['options']['antialias_strength']))
+                    if 'antialias_preview_seconds' in report:
+                        self.status.set('AA preview applied to the last post-color result. Other control changes require Run / Preview. | AA '+str(report['options']['antialias_strength']))
                     self.schedule_redraw()
                 elif kind == 'compared':
                     directory, reports = data
@@ -442,6 +521,11 @@ class App:
                     share = ' | Share: '+summary['share_zip'] if summary['share_zip'] else ''
                     self.status.set('Automatic comparison saved: '+str(directory)+share)
                     self.result_info.set(f'Manual: {summary["manual"]["total_seconds"]:.2f}s | Auto: {summary["automatic"]["total_seconds"]:.2f}s | '+self.auto_description(summary['automatic']['automatic_strength']))
+                elif kind == 'colors_compared':
+                    directory, summary = data
+                    robust = summary['methods']['Robust global']
+                    self.status.set('Color comparison saved: '+str(directory)+' | '+(summary['share_zip'] or 'Full images exceed ZIP size limit.'))
+                    self.result_info.set('Same cleaned image; AA off. Robust global selected: '+robust['selected_method']+' | '+robust.get('reason', ''))
                 elif kind == 'installed':
                     self.status.set(data)
                 elif kind == 'error':

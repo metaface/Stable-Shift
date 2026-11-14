@@ -1,4 +1,4 @@
-"""Stable Shift v2.8 — non-generative image restoration.
+"""Stable Shift v2.9 — non-generative image restoration.
 
 The reference supplies palette information only in Restore Quality. Structural analysis and optional V2 surface cleanup use the edited/denoised image. No Forge hooks.
 """
@@ -27,6 +27,8 @@ class Options:
     soft_guard: float=60.0
     shade_threshold: float=35.0 # sensitivity to tonal transitions
     color_match: bool=True
+    color_method: str='Classic'
+    antialias_strength: float=0.0
     # keep user changes in Preserve Edit as well
     edit_sensitivity: float=23.0
 
@@ -199,6 +201,25 @@ def _palette(clean, restored):
     return array(im)
 
 
+def correct_palette(clean, local_rgb, rgb, opts):
+    """Finish one fixed cleanup result; Classic retains its exact V2.8 path."""
+    report={'requested_method':opts.color_method,'selected_method':'Off'}
+    if not opts.color_match:
+        return rgb,report
+    if opts.color_method=='Robust global':
+        from .global_color import fit_global_color
+        transform,report=fit_global_color(clean,local_rgb)
+        if report['selected_method']=='Robust global':
+            return transform.apply(rgb),report
+    if opts.blotch_strength>0:
+        from .frozen_palette import freeze_palette
+        rgb=freeze_palette(clean,local_rgb).apply(rgb)
+    else:
+        rgb=_palette(clean,rgb)
+    report['selected_method']='Classic'
+    return rgb,report
+
+
 def _denoise_candidate(raw, opts, maps):
     """Unchanged backend result, before legacy blending and source copy-back."""
     if opts.method=='NLM':
@@ -311,7 +332,12 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     from .line_protection import trace_source_lines
     from .stage_maps import stage_diagnostics
     from .surface_normalization import normalize_surfaces
+    from .antialias import antialias,validate_strength
+    from .global_color import METHODS
     import math
+    if opts.color_method not in METHODS:
+        raise ValueError('Unknown color method: '+str(opts.color_method))
+    validate_strength(opts.antialias_strength)
     if opts.auto_strength and denoised_candidate is not None:
         raise ValueError('Automatic strength requires a backend run at its estimated settings; a manual cached candidate cannot be reused.')
     if not math.isfinite(opts.blotch_strength) or not 0 <= opts.blotch_strength <= 100:
@@ -388,19 +414,19 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     cleaned=perf_counter()
     if progress:progress('Reference color correction' if opts.color_match else 'Finishing')
     cleanup_rgb=rgb
-    if opts.color_match:
-        if opts.blotch_strength>0:
-            from .frozen_palette import freeze_palette
-            rgb=freeze_palette(clean,local_rgb).apply(rgb)
-        else:
-            rgb=_palette(clean,rgb)
+    rgb,color_report=correct_palette(clean,local_rgb,rgb,opts)
+    colored=perf_counter()
+    palette_rgb=rgb
+    if progress and opts.antialias_strength>0:progress('Optional edge antialiasing')
+    rgb=antialias(rgb,opts.antialias_strength)
     finished=perf_counter()
     if diagnostics:
-        maps.update(stage_diagnostics(original,denoised_rgb,cleanup_rgb,rgb))
+        maps.update(stage_diagnostics(original,denoised_rgb,cleanup_rgb,rgb,colored=palette_rgb))
     diagnostics_finished=perf_counter()
-    maps['report']={'version':'2.8','backend':opts.method,'resolution':list(edited.size),
+    maps['report']={'version':'2.9','backend':opts.method,'resolution':list(edited.size),
         'source_analysis_seconds':analyzed-start,'denoise_seconds':denoised-analyzed,
-        'cleanup_seconds':cleaned-denoised,'color_seconds':finished-cleaned,
+        'cleanup_seconds':cleaned-denoised,'color_seconds':colored-cleaned,
+        'antialias_seconds':finished-colored,
         'diagnostics_seconds':diagnostics_finished-finished,'total_seconds':diagnostics_finished-start,
         'source_protected_pixels_percent':0. if source_core is None else float(100*np.mean(source_core)),
         'faint_continuity':opts.faint_continuity,
@@ -409,6 +435,8 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
         'automatic_strength':auto_report,'effective_options':asdict(effective),
         'cleanup_strength':opts.cleanup,'color_match':opts.color_match,'options':asdict(opts),
         'region_cleanup':region_report,'broad_normalization':blotch_report,
-        'palette_note':'V2.1 field fitted to local-cleanup baseline; not refitted after broad correction.',
+        'color_correction':color_report,
+        'palette_note':'Fitted to local-cleanup baseline; not refitted after broad correction. Classic retains the V2.8 path.',
+        'antialias_note':'Optional final edge filtering; source-core RGB protection applies before color/AA.',
         'difference_note':'Total change includes palette correction; it is not a noise map.'}
     return Image.fromarray(rgb),maps

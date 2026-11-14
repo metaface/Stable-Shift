@@ -186,3 +186,95 @@ def test_ui_compare_auto_button_exports_both_variants_and_share_archive(tmp_path
         assert 'Auto:' in app.result_info.get()
     finally:
         close_app(root)
+
+
+def test_ui_aa_preview_reuses_last_run_and_clears_with_input(tmp_path, monkeypatch):
+    import numpy as np
+    from stable_shift import engine
+    from stable_shift.app import messagebox
+    from tests.test_finishing import colors
+    root, app = make_app()
+    try:
+        def fail(*args, **kwargs):
+            pytest.fail('Unexpected UI error: '+str(args))
+        monkeypatch.setattr(messagebox, 'showerror', fail)
+        monkeypatch.setattr(messagebox, 'showwarning', fail)
+        calls = []
+        def backend(rgb, *args):
+            calls.append(args)
+            return rgb.copy()
+        monkeypatch.setattr(engine, '_bm3d', backend)
+        path = tmp_path/'image.png'
+        Image.fromarray(colors()).save(path)
+        app.set_image('edited', path)
+        app.palette.set(False)
+        assert app.color_method.get() == 'Classic'
+        assert not app.aa_enabled.get()
+        app.method.set('CPU BM3D')
+        app.automatic.set(False)
+        app.cleanup.set(0)
+        app.blotch_strength.set(0)
+        def finish():
+            deadline = time.monotonic()+15
+            while app.busy and time.monotonic() < deadline:
+                root.update()
+                time.sleep(.01)
+            assert not app.busy
+        app.run()
+        finish()
+        original = np.asarray(app.result).copy()
+        assert len(calls) == 1
+        app.cleanup.set(100)
+        app.color_method.set('Robust global')
+        app.aa_enabled.set(True)
+        app.aa_strength.set(60)
+        app.preview_antialias()
+        finish()
+        assert len(calls) == 1
+        assert app.maps['report']['options']['cleanup'] == 0
+        assert app.maps['report']['options']['color_method'] == 'Classic'
+        assert app.maps['report']['options']['antialias_strength'] == 60
+        assert np.any(np.asarray(app.result) != original)
+        app.aa_enabled.set(False)
+        app.preview_antialias()
+        finish()
+        assert np.array_equal(np.asarray(app.result), original)
+        app.set_image('edited', path)
+        assert app.pre_antialias is None
+    finally:
+        close_app(root)
+
+
+def test_ui_color_comparison_exports_one_fixed_cleanup(tmp_path, monkeypatch):
+    import json
+    from stable_shift.app import filedialog, messagebox
+    from tests.test_finishing import colors, shifted
+    root, app = make_app()
+    try:
+        def fail(*args, **kwargs):
+            pytest.fail('Unexpected UI error: '+str(args))
+        monkeypatch.setattr(messagebox, 'showerror', fail)
+        monkeypatch.setattr(messagebox, 'showwarning', fail)
+        rgb = colors()
+        source, reference = tmp_path/'source.png', tmp_path/'ref.png'
+        Image.fromarray(rgb).save(source)
+        Image.fromarray(shifted(rgb)).save(reference)
+        app.set_image('edited', source)
+        app.set_image('clean', reference)
+        app.method.set('Region cleanup only')
+        app.aa_enabled.set(True)
+        monkeypatch.setattr(filedialog, 'askdirectory', lambda **kwargs: str(tmp_path))
+        app.compare_colors()
+        deadline = time.monotonic()+15
+        while app.busy and time.monotonic() < deadline:
+            root.update()
+            time.sleep(.01)
+        assert not app.busy
+        folder, = tmp_path.glob('color_test_v29_*')
+        assert (folder/'share_color_test.zip').exists()
+        saved = json.loads((folder/'color_settings_and_timings.json').read_text())
+        assert saved['cleanup_run']['options']['antialias_strength'] == 0
+        assert saved['requested_options']['antialias_strength'] == 35
+        assert 'Color comparison saved:' in app.status.get()
+    finally:
+        close_app(root)

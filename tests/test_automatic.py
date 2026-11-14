@@ -283,13 +283,17 @@ def test_comparison_runs_both_selected_strengths_and_freezes_palette(tmp_path, m
     monkeypatch.setattr(engine, '_bm3d', backend)
     image = Image.fromarray(source)
     ref = Image.fromarray(np.uint8(np.clip(source.astype(float)*.8+20, 0, 255)))
-    report = export_auto_comparison(ref, image, ceilings(color_match=True), tmp_path)
+    report = export_auto_comparison(ref, image, ceilings(color_match=True, color_method='Robust global', antialias_strength=100), tmp_path)
     assert len(calls) == 2 and calls[0] == (100, 100)
     assert calls[1][0] < 100 and calls[1][1] < 100
     assert report['manual']['automatic_strength']['enabled'] is False
     assert report['automatic']['automatic_strength']['enabled'] is True
     assert report['source_protection_check']['identical_source_masks'] is True
     assert report['source_protection_check']['changed_after_palette'] == 0
+    assert report['requested_options']['antialias_strength'] == 100
+    for variant in ('manual', 'automatic'):
+        assert report[variant]['options']['antialias_strength'] == 0
+        assert report[variant]['options']['color_method'] == 'Classic'
     with ZipFile(tmp_path/report['share_zip']) as archive:
         names = archive.namelist()
         assert 'color_reference.png' in names and 'edited_source.png' in names
