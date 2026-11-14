@@ -1,4 +1,6 @@
-# Stable Shift V2.8 — standalone test build
+# Stable Shift V2.8 — standalone guide
+
+The active code now lives in `stable_shift/`. See [cleanup notes](CLEANUP.md) for upgrading an existing folder and backing up old root scripts.
 
 ## Bright surface adjustment
 
@@ -69,7 +71,7 @@ Reference correction uses the inherited global LAB color engine, last. It can re
 
 ## Installation, themes and input
 
-Extract outside Forge. Use 64-bit Python with Tkinter; Python 3.11/3.12 are recommended for optional BM3D dependencies. Start **START_Difference_Guard.bat**. Base requirements include `tkinterdnd2==0.7.0`, with native Tcl/Tk 9 support. The launcher upgrades an older installation. Internet is needed for initial dependencies; normal launches with dependencies present do not run pip.
+Extract outside Forge. Use 64-bit Python with Tkinter; Python 3.11/3.12 are recommended for optional BM3D dependencies. Start **START_Stable_Shift.bat**. Base requirements include `tkinterdnd2==0.7.0`, with native Tcl/Tk 9 support. The launcher upgrades an older installation. Internet is needed for initial dependencies; normal launches with dependencies present do not run pip.
 
 Each extracted folder has its own `.venv`. Install optional CPU/GPU BM3D there using the app buttons. Updating an existing folder can reuse its installed environment; do not copy virtual environments between machines. CPU BM3D uses `bm3d==4.0.3`; GPU uses `bm3d-cupy[cuda12]==0.1.3`.
 

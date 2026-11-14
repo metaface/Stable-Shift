@@ -7,9 +7,9 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from automatic_strength import estimate_strength, limit_cleanup
-from engine import Options, restore_quality
-from auto_comparison import export_auto_comparison
+from stable_shift.automatic_strength import estimate_strength, limit_cleanup
+from stable_shift.engine import Options, restore_quality
+from stable_shift.auto_comparison import export_auto_comparison
 
 
 def to_rgb(lab):
@@ -59,7 +59,7 @@ def test_fine_noise_response_increases_and_never_exceeds_requested_ceilings():
 
 
 def test_clean_shaded_input_remains_exact_over_repeated_automatic_passes(monkeypatch):
-    import engine
+    from stable_shift import engine
     y, x = np.mgrid[:96, :120]
     lab = np.full((*x.shape, 3), [48., -3., -16.], np.float32)
     lab[:, :, 0] += x/120*3+y/96*2
@@ -102,7 +102,7 @@ def test_limiting_can_bypass_exactly_or_keep_luminance_and_protected_rgb():
 
 
 def test_backend_gets_effective_strengths_and_actual_stage_residuals_add_up(monkeypatch):
-    import engine
+    from stable_shift import engine
     rng = np.random.default_rng(5)
     source = np.uint8(np.clip(np.full((96, 120, 3), [90, 110, 130])+rng.normal(0, 5, (96, 120, 3)), 0, 255))
     source[42:45, 10:110] = 20
@@ -184,7 +184,7 @@ def test_correlated_noise_can_trigger_backend_despite_small_native_scatter():
 
 
 def test_backend_spatial_limits_retain_gray_detail_beside_colored_contamination(monkeypatch):
-    import engine
+    from stable_shift import engine
     _, source = mixed_correlated_source()
     calls = []
     def deliberately_destructive_candidate(rgb, noise, color):
@@ -222,7 +222,7 @@ def bright_gray_texture(lightness=87., chroma=0.):
 
 
 def test_bright_neutral_permission_excludes_dark_colored_and_protected_pixels():
-    from automatic_strength import _bright_neutral_texture
+    from stable_shift.automatic_strength import _bright_neutral_texture
     _, source = bright_gray_texture()
     core = np.zeros(source.shape[:2], bool);core[:, 70:73] = True
     lab = cv2.cvtColor(source.astype(np.float32)/255, cv2.COLOR_RGB2LAB)
@@ -236,7 +236,7 @@ def test_bright_neutral_permission_excludes_dark_colored_and_protected_pixels():
 
 
 def test_bright_permission_does_not_retarget_backend_or_override_zero_stages(monkeypatch):
-    import automatic_strength
+    from stable_shift import automatic_strength
     _, source = bright_gray_texture()
     effective, maps, _ = estimate_strength(source, ceilings())
     assert maps['auto_bright_neutral_permission'].mean() > .8
@@ -273,7 +273,7 @@ def test_clean_bright_gradient_remains_exact_over_three_automatic_passes():
 
 
 def test_comparison_runs_both_selected_strengths_and_freezes_palette(tmp_path, monkeypatch):
-    import engine
+    from stable_shift import engine
     rng = np.random.default_rng(40)
     source = np.uint8(np.clip(np.full((64, 80, 3), [90, 110, 130])+rng.normal(0, 4, (64, 80, 3)), 0, 255))
     calls = []

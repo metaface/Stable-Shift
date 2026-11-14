@@ -5,9 +5,9 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from engine import Options, restore_quality, _palette
-from frozen_palette import freeze_palette
-from surface_normalization import normalize_surfaces
+from stable_shift.engine import Options, restore_quality, _palette
+from stable_shift.frozen_palette import freeze_palette
+from stable_shift.surface_normalization import normalize_surfaces
 
 
 def patch_data(amplitude=2.):
@@ -98,8 +98,8 @@ def test_frozen_palette_matches_original_v21_output():
 
 
 def test_engine_keeps_protected_rgb_and_signed_stage_accounting(monkeypatch):
-    import engine
-    from test_v21 import weak_cabin
+    from stable_shift import engine
+    from tests.test_v21 import weak_cabin
     rgb = weak_cabin()
     y, x = np.mgrid[:rgb.shape[0], :rgb.shape[1]]
     noisy = rgb.copy()
@@ -129,9 +129,9 @@ def test_reference_cannot_supply_structure_to_broad_stage():
 
 
 def test_blotch_comparison_runs_denoiser_once_and_holds_palette_fixed(tmp_path, monkeypatch):
-    import engine
-    from blotch_comparison import export_blotch_comparison
-    from test_v21 import weak_cabin
+    from stable_shift import engine
+    from tools.blotch_comparison import export_blotch_comparison
+    from tests.test_v21 import weak_cabin
     rgb = weak_cabin()
     calls = []
     def denoise(a, *args):
@@ -205,7 +205,7 @@ def test_loop_passes_do_not_accumulate_flattening_on_clean_nonlinear_shading():
 @pytest.mark.parametrize('with_mask', [False, True])
 def test_saved_pair_replay_states_its_mask_and_does_not_rerun_generation(tmp_path, with_mask):
     import json
-    from validate_blotch_pair import replay
+    from tools.validate_blotch_pair import replay
     _, dirty = patch_data()
     dirty[:, 90:93] = 10
     core = np.zeros(dirty.shape[:2], bool)

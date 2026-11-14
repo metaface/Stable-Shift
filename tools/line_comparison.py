@@ -8,9 +8,9 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps
 
-from engine import array, structure_maps, _denoise_candidate, restore_quality
-from frozen_palette import freeze_palette
-from stage_maps import save_diagnostics
+from stable_shift.engine import array, structure_maps, _denoise_candidate, restore_quality
+from stable_shift.frozen_palette import freeze_palette
+from stable_shift.stage_maps import save_diagnostics
 
 
 def export_line_comparison(clean, edited, options, directory, progress=None):

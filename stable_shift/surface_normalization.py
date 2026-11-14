@@ -13,7 +13,7 @@ from typing import Callable
 import cv2
 import numpy as np
 
-from region_cleanup import boundary_graph
+from .region_cleanup import boundary_graph
 
 
 def _fit(groups, basis, colors, weights, count):

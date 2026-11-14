@@ -8,9 +8,9 @@ from zipfile import ZipFile, ZIP_DEFLATED
 import numpy as np
 from PIL import Image, ImageDraw, ImageOps
 
-from engine import array, restore_quality
-from frozen_palette import freeze_palette
-from stage_maps import save_diagnostics
+from .engine import array, restore_quality
+from .frozen_palette import freeze_palette
+from .stage_maps import save_diagnostics
 
 
 def export_auto_comparison(clean, edited, options, directory, progress=None):

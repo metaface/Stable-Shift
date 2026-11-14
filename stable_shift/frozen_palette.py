@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from difference_guard_core import Settings, _resize_rgb, _calc_fields, _to_lab, _from_lab
+from .difference_guard_core import Settings, _resize_rgb, _calc_fields, _to_lab, _from_lab
 
 
 @dataclass

@@ -193,7 +193,7 @@ def _bm3d(rgb, noise, color_noise):
 
 def _palette(clean, restored):
     # Reuse v0.8's tested LAB global matcher; no denoising or edit mode here.
-    from difference_guard_core import Settings, restore
+    from .difference_guard_core import Settings, restore
     im,_=restore(clean,Image.fromarray(restored),Settings(mode='global',chroma_strength=1,
         brightness_strength=1,max_lab_change=90,auto_protect=False),diagnostics=False)
     return array(im)
@@ -273,7 +273,7 @@ def preserve_edits(clean:Image.Image,edited:Image.Image,opts:Options):
     """Legacy precise multi-map preservation, for maintaining an unbroken baseline."""
     if clean.size != edited.size:
         raise ValueError('Preserve Edits requires the reference and edited image to have the same dimensions and registration. Restore Quality supports different sizes.')
-    from difference_guard_core import Settings,restore
+    from .difference_guard_core import Settings,restore
     out,maps=restore(clean,edited,Settings(mode='composite_precise',auto_protect=True,
         protect_strength=1.0,difference_threshold=opts.edit_sensitivity,
         feather_pixels=2,work_limit=1280),diagnostics=True)
@@ -307,10 +307,10 @@ def _gpu_bm3d(rgb, noise, color_noise):
 def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, denoised_candidate=None):
     from time import perf_counter
     from dataclasses import replace, asdict
-    from region_cleanup import surface_cleanup, RegionOptions
-    from line_protection import trace_source_lines
-    from stage_maps import stage_diagnostics
-    from surface_normalization import normalize_surfaces
+    from .region_cleanup import surface_cleanup, RegionOptions
+    from .line_protection import trace_source_lines
+    from .stage_maps import stage_diagnostics
+    from .surface_normalization import normalize_surfaces
     import math
     if opts.auto_strength and denoised_candidate is not None:
         raise ValueError('Automatic strength requires a backend run at its estimated settings; a manual cached candidate cannot be reused.')
@@ -330,7 +330,7 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     auto_maps={}
     auto_report={'enabled':False}
     if opts.auto_strength:
-        from automatic_strength import estimate_strength,limit_cleanup
+        from .automatic_strength import estimate_strength,limit_cleanup
         if progress:progress('Automatic strength: measuring native and correlated multiscale scatter')
         effective,auto_maps,auto_report=estimate_strength(original,opts,source_core)
         maps.update(auto_maps)
@@ -390,7 +390,7 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     cleanup_rgb=rgb
     if opts.color_match:
         if opts.blotch_strength>0:
-            from frozen_palette import freeze_palette
+            from .frozen_palette import freeze_palette
             rgb=freeze_palette(clean,local_rgb).apply(rgb)
         else:
             rgb=_palette(clean,rgb)

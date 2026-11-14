@@ -1,4 +1,6 @@
-# V2.8 validation
+# V2.8 processing validation
+
+These are the accepted processing checks from before the file reorganization. Layout, packaging and migration checks are documented in [CLEANUP.md](CLEANUP.md).
 
 ## Issue and narrow change
 

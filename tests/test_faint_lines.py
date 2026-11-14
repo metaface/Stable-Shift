@@ -7,9 +7,9 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from engine import Options, restore_quality
-from line_protection import trace_source_lines, _continue_faint_segments
-from line_comparison import export_line_comparison
+from stable_shift.engine import Options, restore_quality
+from stable_shift.line_protection import trace_source_lines, _continue_faint_segments
+from tools.line_comparison import export_line_comparison
 
 
 def faint_stroke(blank_gap=False, tail=False):
@@ -78,7 +78,7 @@ def test_broken_slanted_stroke_is_not_limited_to_horizontal_or_diagonal_lines():
 
 
 def test_noisy_flat_image_does_not_gain_a_large_new_protected_area():
-    from engine import structure_maps
+    from stable_shift.engine import structure_maps
     rng = np.random.default_rng(1)
     rgb = np.uint8(np.clip(np.full((192, 192, 3), [75, 90, 110])+rng.normal(0, 3, (192, 192, 3)), 0, 255))
     evidence = structure_maps(Image.fromarray(rgb))
@@ -88,7 +88,7 @@ def test_noisy_flat_image_does_not_gain_a_large_new_protected_area():
 
 
 def test_comparison_reuses_backend_recovers_source_stroke_and_keeps_palette_fixed(tmp_path, monkeypatch):
-    import engine
+    from stable_shift import engine
     rgb, evidence = faint_stroke()
     monkeypatch.setattr(engine, 'structure_maps', lambda *args: {k: v.copy() for k, v in evidence.items()})
     calls = []
