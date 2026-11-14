@@ -38,7 +38,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.7 — Multiscale Automatic Strength')
+        root.title('Stable Shift V2.8 — Bright Surface Cleanup')
         root.geometry('1400x940')
         root.minsize(1040, 760)
         self.images = {'clean': None, 'edited': None}
@@ -376,7 +376,7 @@ class App:
         parent = filedialog.askdirectory(title='Choose parent folder for a new automatic comparison')
         if not parent:
             return
-        directory = Path(parent) / datetime.now().strftime('auto_test_v27_%Y%m%d_%H%M%S_%f')
+        directory = Path(parent) / datetime.now().strftime('auto_test_v28_%Y%m%d_%H%M%S_%f')
         self.begin('Comparing manual and automatic strengths; backend settings are tested separately')
         def worker():
             try:

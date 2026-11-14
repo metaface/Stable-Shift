@@ -78,7 +78,7 @@ def export_line_comparison(clean, edited, options, directory, progress=None):
         'note': 'Exact source retention is not proof that every real line was detected or visibly restored.',
     }
     summary = {
-        'version': '2.7', 'options': asdict(options),
+        'version': '2.8', 'options': asdict(options),
         'comparison': 'V2.4 tracing versus source-supported faint-segment continuation',
         'shared_denoiser_ran_once': True, 'shared_denoise_seconds': denoise_seconds,
         'shared_denoise_note': 'Variant denoise_seconds measure guard/copy-back only; backend time is recorded once above.',

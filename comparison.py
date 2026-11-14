@@ -69,7 +69,7 @@ def export_comparison(clean, edited, options, directory, progress=None):
             ImageDraw.Draw(tile).text((j * (size + 10) + 3, 8), name, fill='white')
         tile.save(directory / f'crop_{i}_x{left}_y{top}_100percent.png')
     (directory / 'settings_and_timings.json').write_text(json.dumps({
-        'version': '2.7', 'options': asdict(options),
+        'version': '2.8', 'options': asdict(options),
         'reference_size': list(clean.size), 'edited_size': list(edited.size),
         'runs': reports,
     }, indent=2), encoding='utf-8')

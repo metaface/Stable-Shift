@@ -1,4 +1,12 @@
-# Stable Shift V2.7 — standalone test build
+# Stable Shift V2.8 — standalone test build
+
+## Bright surface adjustment
+
+V2.8 retains V2.7's selected backend settings and source tracing. It adds a local permission floor for fine texture within supported bright, low-chroma surfaces. This addresses gray/blue speckling around white sparkle details that the earlier colored-variation requirement and extra protection fade left behind.
+
+The cue uses source LAB lightness/chroma, broad support for a bright neutral surface and local fine-scale luminance scatter. It does not inspect reference geometry or identify an object. Constant or gently shaded clean surfaces receive no extra permission. Exact source-core pixels remain excluded; the existing filters retain their own barriers. Eligible gaps can receive more of the existing denoiser, local and broad corrections without the extra wide automatic fade around every small point detail.
+
+This rule is applied after backend-strength estimation, so it does not retarget or add a denoiser run. Its `auto_bright_neutral_permission` map is merged into the actual luminance/chroma permission fields used by the stages. The report records active area and mean permission. It can soften intentional fine gray texture on bright neutral objects; it is not semantic recognition of unwanted sparkle halos.
 
 ## Automatic strength
 
@@ -9,8 +17,8 @@ Start with the usual edited image and color reference, source tracing enabled, a
 The controller measures three kinds of source evidence:
 
 1. Robust high-pass LAB scatter is measured at the native size and analysis scales 2, 4, 8 and 16. Box-average scale compensation gives white-noise-equivalent candidate cues. Coarse samples require sufficient eligible colored-interior support, with protected source edges excluded. These cues set the existing denoiser sliders, capped by requested ceilings. They can include real shading, so they are not estimates of certain noise. BM3D sigma mappings are unchanged; legacy methods have different strength scales.
-2. Medium-scale luminance/chroma variation identifies possible correlated contamination. Extra luminance cleanup requires accompanying colored variation, since gray variation alone can be smoke, shading or deliberate texture.
-3. Strong shared directionality in luminance and chroma reduces permission near coherent shading. Luminance directionality alone does not veto grid cleanup. A six-pixel fade beside source protection limits the denoiser and surface corrections; retained surface filters also have their own barriers/fades. Zero-weight pixels keep exact input RGB for that stage, and the original source core remains protected.
+2. Medium-scale luminance/chroma variation identifies possible correlated contamination. The general luminance rule requires accompanying colored variation, since gray variation alone can be smoke, shading or deliberate texture. V2.8 adds the separate supported bright-neutral fine-texture cue described above.
+3. Strong shared directionality in luminance and chroma reduces permission near coherent shading. Luminance directionality alone does not veto grid cleanup. The general rule uses a six-pixel fade beside source protection; eligible bright-neutral fine texture can receive additional permission as described above. Retained surface filters also have their own barriers/fades. Zero-weight pixels keep exact input RGB for that stage, and the original source core remains protected.
 
 Auto now limits the guarded backend correction as well as both retained V2.4 surface candidates, independently in LAB luminance/chroma. Native independent grain can authorize fine denoising of gray areas without authorizing broad brightness flattening. No new smoothing filter is added. If neither native nor eligible coarse scatter justifies the backend minimum, Auto skips it and records why. If only one selected slider is zero, that backend channel still uses its unchanged manual minimum, subject to the spatial limits.
 
@@ -18,7 +26,7 @@ This is conservative source analysis, not a learned or semantic classifier. Gray
 
 ## Controlled comparison
 
-Choose **Compare auto** and a parent folder. It creates `auto_test_v27_<timestamp>` containing:
+Choose **Compare auto** and a parent folder. It creates `auto_test_v28_<timestamp>` containing:
 
 - `00_manual_before_palette.png`: requested manual strengths, V2.4 tracing/cleanup, before colors.
 - `01_auto_before_palette.png`: automatic strengths and limits, before colors.
@@ -40,6 +48,7 @@ The **Legacy manual** toolbar button retains the earlier V2 comparison with auto
 Save maps and Compare export exact arrays in `diagnostics_raw.npz` and pictures with a legend. Comparison prefixes are `manual_` and `auto_`.
 
 - `auto_luminance_strength`, `auto_chroma_strength`: actual 0–1 fields applied to both surface candidates. `auto_denoise_luminance_strength` and `auto_denoise_chroma_strength` control the guarded backend handoff. These are permission weights, not noise probabilities.
+- `auto_bright_neutral_permission`: additional source-derived permission for fine mottling within supported bright neutral surfaces; it does not change candidate settings or source cores.
 - `auto_color_variation`: medium chroma variation divided by 2 for display. `auto_luminance_coherence`: directional coherence, 0–1.
 - `source_line_core`: binary original-pixel protection passed to both cleanup stages. White pixels keep source RGB before final color correction. Reference geometry does not supply this map.
 - `unprotected_denoise_signed_rgb`: raw backend minus original; `guard_signed_rgb`: guards/source copy-back minus raw backend; `auto_denoise_limit_signed_rgb`: spatially limited handoff minus guarded handoff. All three sum to `denoise_signed_rgb`. Manual runs omit the third term. When Auto skips the backend, raw denoising change is zero.

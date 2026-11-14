@@ -81,10 +81,11 @@ def save_diagnostics(maps, directory, prefix=''):
     draw.text((20, 90), 'Binary protection maps: black = unprotected; white = protected.', fill='white')
     draw.text((20, 113), 'Colors visualize numbers. They do not identify the hue or type of noise.', fill='white')
     guide.save(directory/(prefix+'MAP_LEGEND.png'))
-    note = '''# Diagnostic map meanings — V2.7 multiscale automatic strength
+    note = '''# Diagnostic map meanings — V2.8 bright surface permissions
 
 - auto_luminance_strength / auto_chroma_strength: source-derived permission, 0–1, applied to each local/broad candidate correction before palette matching. These fields can reduce but never increase the requested cleanup. They are not noise probabilities.
 - auto_denoise_luminance_strength / auto_denoise_chroma_strength: permission applied to the guarded backend handoff. These allow a strong candidate in noisy colored interiors while retaining quieter gray structure elsewhere.
+- auto_bright_neutral_permission: extra permission for fine mottling in supported bright, low-chroma surfaces. It raises the backend/local/broad permission fields without changing selected backend settings or source cores. The exact cores remain excluded. It is not a sparkle/object detector, color correction or a noise probability.
 - auto_denoise_limit_change / auto_denoise_limit_signed_rgb: automatic spatial limiting minus the guarded backend handoff. Signed values often undo part of the candidate correction. Raw backend + legacy guard + this automatic limit sum exactly to denoise_signed_rgb; manual runs omit the last term.
 - auto_color_variation: medium-scale LAB chroma variation divided by 2, clipped for display. It helps authorize colored-blotch cleanup; it is not a segmentation mask.
 - auto_luminance_coherence: directional coherence of source luminance gradients, 0–1; high coherence reduces automatic surface smoothing.

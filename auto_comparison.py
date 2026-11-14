@@ -58,7 +58,7 @@ def export_auto_comparison(clean, edited, options, directory, progress=None):
     auto_core = auto_maps.get('source_line_core', np.zeros(source.shape[:2])) > .5
     common = manual_core & auto_core
     summary = {
-        'version': '2.7', 'options': asdict(options),
+        'version': '2.8', 'options': asdict(options),
         'comparison': 'Same source, manual ceilings versus multiscale automatic candidate strengths and spatial limits',
         'manual': manual_maps['report'], 'automatic': auto_maps['report'],
         'denoiser_note': 'Different candidate strengths require separate backend runs. Automatic skips only when native and eligible coarse cues do not justify denoising.',
@@ -109,7 +109,8 @@ def export_auto_comparison(clean, edited, options, directory, progress=None):
         crop.save(directory/f'auto_crop_{number}_x{left}_y{top}_100percent.png')
     names = [name for name, _, _ in views]+['edited_source.png', 'source_protection.png']
     optional = ['color_reference.png', 'auto_raw_denoiser.png', 'auto_controlled_denoiser.png',
-        'auto_auto_luminance_strength.png', 'auto_auto_chroma_strength.png', 'manual_raw_denoiser.png']
+        'auto_auto_bright_neutral_permission.png', 'auto_auto_luminance_strength.png',
+        'auto_auto_chroma_strength.png', 'manual_raw_denoiser.png']
     size = sum((directory/name).stat().st_size for name in names)+100_000
     omitted = []
     if size < 30*1024*1024:

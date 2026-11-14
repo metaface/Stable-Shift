@@ -211,6 +211,67 @@ def test_actual_cpu_reduces_correlated_colored_noise_and_keeps_neighboring_gray_
     assert np.array_equal(np.array(out)[gray], source[gray])
 
 
+def bright_gray_texture(lightness=87., chroma=0.):
+    rng = np.random.default_rng(103)
+    lab = np.full((128, 160, 3), [lightness, 0., chroma], np.float32)
+    clean = to_rgb(lab)
+    texture = cv2.GaussianBlur(rng.normal(0, 1, lab.shape[:2]).astype(np.float32), (0, 0), .7)
+    texture /= texture.std()
+    lab[:, :, 0] += texture*.8
+    return clean, to_rgb(lab)
+
+
+def test_bright_neutral_permission_excludes_dark_colored_and_protected_pixels():
+    from automatic_strength import _bright_neutral_texture
+    _, source = bright_gray_texture()
+    core = np.zeros(source.shape[:2], bool);core[:, 70:73] = True
+    lab = cv2.cvtColor(source.astype(np.float32)/255, cv2.COLOR_RGB2LAB)
+    permission = _bright_neutral_texture(lab, core)
+    assert permission.mean() > .8
+    assert not np.any(permission[core])
+    for lightness, chroma in ((45., 0.), (85., 25.)):
+        _, sample = bright_gray_texture(lightness, chroma)
+        sl = cv2.cvtColor(sample.astype(np.float32)/255, cv2.COLOR_RGB2LAB)
+        assert not np.any(_bright_neutral_texture(sl, np.zeros(sl.shape[:2], bool)))
+
+
+def test_bright_permission_does_not_retarget_backend_or_override_zero_stages(monkeypatch):
+    import automatic_strength
+    _, source = bright_gray_texture()
+    effective, maps, _ = estimate_strength(source, ceilings())
+    assert maps['auto_bright_neutral_permission'].mean() > .8
+    disabled, _ = restore_quality(Image.fromarray(source), Image.fromarray(source),
+        ceilings(method='Region cleanup only', cleanup=0, blotch_strength=0, source_guard=False))
+    assert np.array_equal(np.array(disabled), source)
+    monkeypatch.setattr(automatic_strength, '_bright_neutral_texture',
+        lambda lab, protected: np.zeros(lab.shape[:2], np.float32))
+    previous, _, _ = estimate_strength(source, ceilings())
+    assert effective.noise == previous.noise
+    assert effective.color_noise == previous.color_noise
+
+
+def test_bright_gray_cleanup_reduces_known_error_without_a_backend():
+    clean, source = bright_gray_texture()
+    out, maps = restore_quality(Image.fromarray(source), Image.fromarray(source),
+        ceilings(method='Region cleanup only', source_guard=False))
+    before = np.mean((source.astype(float)-clean)**2)
+    after = np.mean((np.array(out).astype(float)-clean)**2)
+    assert after < before*.5, (before, after)
+    assert maps['report']['automatic_strength']['backend_skipped'] is True
+
+
+def test_clean_bright_gradient_remains_exact_over_three_automatic_passes():
+    y, x = np.mgrid[:96, :120]
+    lab = np.full((*x.shape, 3), [86., 0., 0.], np.float32)
+    lab[:, :, 0] += x/120*2+y/96
+    source = to_rgb(lab)
+    current = Image.fromarray(source)
+    for _ in range(3):
+        current, _ = restore_quality(current, current,
+            ceilings(method='Region cleanup only', source_guard=False))
+    assert np.array_equal(np.array(current), source)
+
+
 def test_comparison_runs_both_selected_strengths_and_freezes_palette(tmp_path, monkeypatch):
     import engine
     rng = np.random.default_rng(40)

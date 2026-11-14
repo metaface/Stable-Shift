@@ -66,6 +66,26 @@ def _multiscale_scatter(lab, protected, luma_permission, color_permission):
     return fine, correlated, levels
 
 
+def _bright_neutral_texture(lab, protected):
+    """Extra permission for fine mottling within bright, near-neutral surfaces.
+
+    Broad neighborhood support distinguishes a light surface from an isolated
+    highlight. Exact source cores remain excluded. This does not classify an
+    object or change its colors; it trusts more of the existing candidates.
+    """
+    lightness = lab[:, :, 0]
+    chroma = np.linalg.norm(lab[:, :, 1:], axis=2)
+    support = cv2.GaussianBlur(((lightness > 75) & (chroma < 12)).astype(np.float32),
+                               (0, 0), 16., borderType=cv2.BORDER_REFLECT)
+    fine = lightness-cv2.GaussianBlur(lightness, (0, 0), 1.5, borderType=cv2.BORDER_REFLECT)
+    scatter = np.sqrt(np.maximum(0., cv2.GaussianBlur(fine*fine, (0, 0), 8.,
+                                                    borderType=cv2.BORDER_REFLECT)))
+    permission = (_ramp(.50, .80, support)*_ramp(55., 75., lightness)
+                  *(1.-_ramp(10., 16., chroma))*_ramp(.10, .40, scatter))
+    permission[protected] = 0
+    return permission.astype(np.float32)
+
+
 def estimate_strength(rgb, requested, protected=None):
     started = perf_counter()
     rgb = np.asarray(rgb)
@@ -116,6 +136,15 @@ def estimate_strength(rgb, requested, protected=None):
     backend_luma = np.maximum(luma_amount, _ramp(.5, 1.5, sigma[0])*taper)
     backend_chroma = np.maximum(color_amount, _ramp(1.275, 2.5, np.max(sigma[1:]))*taper)
     backend_luma[protected] = backend_chroma[protected] = 0
+    # Apply this AFTER strength estimation: broad candidate settings stay the
+    # same. Dense point details on a light surface must not veto cleanup in
+    # all the gaps around them. The exact cores and each filter's barriers
+    # still apply; the extra wide automatic fade need not surround every dot.
+    bright_permission = _bright_neutral_texture(lab, protected)
+    luma_amount = np.maximum(luma_amount, bright_permission)
+    color_amount = np.maximum(color_amount, bright_permission)
+    backend_luma = np.maximum(backend_luma, bright_permission)
+    backend_chroma = np.maximum(backend_chroma, bright_permission)
     if not np.any(luma_amount) and not np.any(color_amount):
         effective = replace(effective, cleanup=0., blotch_strength=0.)
     # The manual BM3D adapters have a nonzero sigma even at slider zero.
@@ -145,7 +174,9 @@ def estimate_strength(rgb, requested, protected=None):
         'mean_chroma_surface_permission_percent': float(100*color_amount.mean()),
         'mean_luminance_backend_permission_percent': float(100*backend_luma.mean()),
         'mean_chroma_backend_permission_percent': float(100*backend_chroma.mean()),
-        'note': 'Multiscale candidate strengths and source-only spatial limits. Coarse scatter is not semantic noise certainty; gray-only blotches may remain.',
+        'bright_neutral_active_pixels_percent': float(100*np.mean(bright_permission > 0)),
+        'mean_bright_neutral_permission_percent': float(100*bright_permission.mean()),
+        'note': 'Multiscale candidates and source-only spatial limits, including bright-neutral fine texture. These are heuristics, not semantic noise certainty.',
         'seconds': perf_counter()-started,
     }
     maps = {
@@ -155,6 +186,7 @@ def estimate_strength(rgb, requested, protected=None):
         'auto_luminance_coherence': luma_coherence.astype(np.float32),
         'auto_denoise_luminance_strength': backend_luma.astype(np.float32),
         'auto_denoise_chroma_strength': backend_chroma.astype(np.float32),
+        'auto_bright_neutral_permission': bright_permission,
     }
     return effective, maps, report
 
