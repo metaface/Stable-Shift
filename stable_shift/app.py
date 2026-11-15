@@ -39,7 +39,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.12 — Stable Color Correction')
+        root.title('Stable Shift V2.13 — Reconstruction Comparison')
         root.geometry('1400x940')
         root.minsize(1040, 760)
         self.images = {'clean': None, 'edited': None}
@@ -149,6 +149,10 @@ class App:
         ttk.Spinbox(strokes, from_=0, to=100, width=5, textvariable=self.stroke_strength).pack(side='left', padx=5)
         ttk.Button(strokes, text='Preview strokes on last result', command=self.preview_strokes).pack(side='left', padx=7)
         ttk.Button(strokes, text='Compare strokes 0 / 60 / 100', command=self.compare_strokes).pack(side='left', padx=7)
+        reconstruction = ttk.Frame(controls)
+        reconstruction.pack(fill='x', pady=3)
+        ttk.Button(reconstruction, text='Compare reconstruction', command=self.compare_reconstruction).pack(side='left', padx=7)
+        ttk.Label(reconstruction, text='Experimental: pyramid / solid colors / smooth gradients. Normal Run retains V2.12 cleanup.').pack(side='left', padx=5)
         ttk.Label(strokes, text='100 applies the full candidate.').pack(side='left', padx=7)
         self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
         ag = ttk.Frame(self.advanced)
@@ -451,6 +455,31 @@ class App:
                 self.queue.put(('error', (str(exc), traceback.format_exc())))
         Thread(target=worker, daemon=True).start()
 
+    def compare_reconstruction(self):
+        if self.busy:
+            return
+        if self.mode.get() != 'Restore Quality':
+            messagebox.showinfo('Compare reconstruction', 'This comparison is for Restore Quality.')
+            return
+        try:
+            clean, edited, opts = self.snapshot()
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Inputs/settings', str(exc))
+            return
+        parent = filedialog.askdirectory(title='Choose parent folder for a reconstruction comparison')
+        if not parent:
+            return
+        directory = Path(parent)/datetime.now().strftime('reconstruction_test_v213_%Y%m%d_%H%M%S_%f')
+        self.begin('Comparing accepted cleanup, pyramid and solid-color reconstruction; finishing off')
+        def worker():
+            try:
+                from .reconstruction_comparison import export_reconstruction_comparison
+                summary = export_reconstruction_comparison(clean, edited, opts, directory, self.progress)
+                self.queue.put(('reconstruction_compared', (directory, summary)))
+            except Exception as exc:
+                self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
     def preview_antialias(self):
         if self.busy:
             return
@@ -601,6 +630,11 @@ class App:
                     robust = summary['methods']['Robust global']
                     self.status.set('Color comparison saved: '+str(directory)+' | '+(summary['share_zip'] or 'Full images exceed ZIP size limit.'))
                     self.result_info.set('Same cleaned image; finishing off. 02 uses the accepted RGB-only correction. Selected: '+robust['selected_method'])
+                elif kind == 'reconstruction_compared':
+                    directory, summary = data
+                    self.status.set('Reconstruction comparison saved: '+str(directory)+' | '+(summary['share_zip'] or 'Full images exceed ZIP size limit.'))
+                    color = summary['color_correction']
+                    self.result_info.set('Compare the four saved results and native crops. Shared colors: '+color['selected_method']+'. '+color['reason'])
                 elif kind == 'strokes_compared':
                     directory, summary = data
                     candidate = summary['candidate']

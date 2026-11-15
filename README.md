@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.12** restores the accepted V2.10 RGB-only color correction after V2.11's shading-restoration pass brought blotches back. Denoising, stroke cleanup and AA are unchanged. No new dependencies.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.13** adds an isolated reconstruction comparison: quarter-to-half-to-full processing, solid paint regions, and solid regions with supported smooth gradients. Normal Run retains the accepted V2.12 processing. No new dependencies.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -10,13 +10,26 @@ For a Git checkout, close the app and pull the branch you are testing with Git B
 
 For a fresh ZIP installation, extract into a new folder and use the Start launcher. It installs base requirements; optional CPU/GPU BM3D can be installed with the app buttons. For older installations updated by copying a ZIP over existing files, see [cleanup notes](docs/CLEANUP.md). `python app.py` remains supported.
 
+## Compare reconstruction and solid colors
+
+Load your usual pair and keep your usual denoiser and cleanup settings. Choose **Compare reconstruction**. The experiment uses full-strength candidates and turns stroke cleanup and AA off for every comparison image. It exports:
+
+1. `01_accepted.png` — accepted V2.12 cleanup.
+2. `02_pyramid.png` — independently cleaned quarter/half layers reconstructed to full size with boundary guidance.
+3. `03_hard_colors.png` — one solid color per detected paint region.
+4. `04_hard_with_gradients.png` — solid regions with independently supported smooth color trends.
+
+All four use the same fitted global RGB correction. If that fit is unreliable, all four retain source colors; a spatial Classic correction would invalidate the solid-color experiment. Normal Run's color controls and fallback remain unchanged.
+
+Inspect the tree, tail markings, beach sparkles and smoke in the full outputs and native crops. `share_reconstruction_test.zip` includes full inputs/results and additional evidence within a 30-MiB budget. These are experimental comparisons, not a replacement default. The gradient test can reject genuine color variation or accept an artifact; it does not recognize iridescence. See [reconstruction validation](docs/VALIDATION_V213.md).
+
 ## Restored clean color correction
 
 Choose **Robust global** for normal Run. It again applies only the fitted RGB transform to the fully cleaned image. The failed V2.11 shading-restoration pass has been removed, including its normal and comparison paths. It no longer transfers variation from the earlier cleanup baseline into the result.
 
 **Compare colors** exports `01_classic.png` and `02_robust_global.png` from the same cleaned image with strokes/AA off. Additional native crops cover the tree, foreground thigh and tail. `share_color_test.zip` retains the full inputs and outputs within the existing budget.
 
-The foreground tree's softer shading remains an open issue at its V2.10 level. This update restores the accepted clean result without another shading experiment. See [regression validation](docs/VALIDATION_V212.md).
+Normal Run retains the V2.12 baseline, including its foreground-tree shading limitation. The new reconstruction comparison is separate from that accepted processing. See [V2.12 regression validation](docs/VALIDATION_V212.md).
 
 ## Test stroke cleanup at full strength
 

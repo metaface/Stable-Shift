@@ -1,4 +1,22 @@
-# Stable Shift V2.12 — standalone guide
+# Stable Shift V2.13 — standalone guide
+
+## Experimental reconstruction comparison
+
+Choose **Compare reconstruction** after loading your usual pair and denoiser settings. Normal **Run / Preview** retains the accepted V2.12 processing; the new methods are only available through this comparison while they are evaluated. The engine's normal-run report therefore still identifies V2.12 processing.
+
+The button produces four full-size images: `01_accepted.png`, `02_pyramid.png`, `03_hard_colors.png`, and `04_hard_with_gradients.png`. The candidates run at full strength. Stroke cleanup and AA are off in all four, regardless of their checkboxes. No new restoration-strength controls are required for this test.
+
+The accepted full-resolution denoiser runs once. Quarter and half images are independently reduced from the edited source, then independently processed by the selected backend and local cleanup with broad correction off. Auto estimates their settings separately. Exact native ink is retained at the final scale using the original source-line map, rather than enlarged low-resolution ink. This costs additional denoiser time; it is not a cached preview of a previous Run.
+
+The pyramid starts with the quarter layer, joins the half layer, and enlarges to full size with boundary guidance from the independently processed native image. The solid-color experiment uses sharp, scale-supported boundaries and the native source-line map to partition paint regions. Each region receives one robust color from its coarse samples. It does not turn every gradual color difference into a new region. Small regions without usable coarse samples use the reconstructed field, not unfiltered native texture.
+
+The fourth view can replace a region's flat fill with a smooth LAB plane. The plane must improve held-out spatial tiles and have matching direction and amplitude at half and quarter size. Existing bright-neutral texture permission can veto the exception. It does not paste the native color residual back. This is a test for supported smooth variation, not recognition of iridescence, highlights, or noise. Curved/localized color fades can be lost, and genuine gradients can fail these tests.
+
+All four views share one fitted **Robust global** RGB transform so color correction cannot create spatial patterns inside a solid fill. If that fit is rejected, the comparison retains source colors for all four images and reports why. The normal Run color-method selection and Classic fallback are unchanged. Reference geometry never enters reconstruction.
+
+The comparison folder includes full inputs/results, independent coarse layers, before-color outputs, a contact sheet, eight native crops, source protection, accepted gradient regions, raw reconstruction evidence and actual settings/timings. `share_reconstruction_test.zip` includes full inputs/results and available supporting files within 30 MiB. The JSON lists omitted optional files. Raw NPZ and extra before-color images stay outside the ZIP.
+
+Check the tree shade, tail color fades, sparkle halos and cigarette smoke. Solid fills can flatten shading where a real boundary is missed. Exact ink pixels alone do not guarantee unchanged surrounding contrast. Coarse denoising and guided reconstruction can also leave boundary rims. See [reconstruction validation](VALIDATION_V213.md).
 
 The active code now lives in `stable_shift/`. See [cleanup notes](CLEANUP.md) for upgrading an existing folder and backing up old root scripts.
 
@@ -10,7 +28,7 @@ Robust global again applies only its global RGB transform to the fully cleaned p
 
 Choose **Robust global** for normal Run, or **Compare colors** for `01_classic.png` versus `02_robust_global.png`. Strokes and AA remain off in that comparison. Six native crops now include the tree-root area, thigh and tail so tonal regressions are visible alongside the line-work crops. The withdrawn V2.11 output is not a product option. Denoising, automatic strength, source tracing, surface cleanup, stroke cleanup and AA are unchanged.
 
-The tree shading remains at the accepted V2.10 level. A replacement fix must preserve cleaned surfaces as well as shading; no further shading reconstruction is enabled in this update. See [regression validation](VALIDATION_V212.md).
+Normal Run's tree shading remains at the accepted V2.10/V2.12 level. Reconstruction candidates are isolated in the new comparison rather than enabled in normal processing. See [regression validation](VALIDATION_V212.md).
 
 ## Stroke cleanup
 

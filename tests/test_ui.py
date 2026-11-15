@@ -280,6 +280,44 @@ def test_ui_color_comparison_exports_one_fixed_cleanup(tmp_path, monkeypatch):
         close_app(root)
 
 
+def test_ui_reconstruction_comparison_exports_four_candidates_and_retains_run_result(tmp_path, monkeypatch):
+    import json
+    from stable_shift.app import filedialog, messagebox
+    from tests.test_finishing import colors
+    root, app = make_app()
+    try:
+        def fail(*args, **kwargs):
+            pytest.fail('Unexpected UI error: '+str(args))
+        monkeypatch.setattr(messagebox, 'showerror', fail)
+        monkeypatch.setattr(messagebox, 'showwarning', fail)
+        path = tmp_path/'paint.png'
+        Image.fromarray(colors()).save(path)
+        app.set_image('edited', path)
+        app.palette.set(False)
+        app.method.set('Region cleanup only')
+        app.strokes_enabled.set(True)
+        app.aa_enabled.set(True)
+        retained = Image.new('RGB', (7, 9), 'red')
+        app.result = retained
+        monkeypatch.setattr(filedialog, 'askdirectory', lambda **kwargs: str(tmp_path))
+        app.compare_reconstruction()
+        deadline = time.monotonic()+15
+        while app.busy and time.monotonic() < deadline:
+            root.update()
+            time.sleep(.01)
+        assert not app.busy
+        folder, = tmp_path.glob('reconstruction_test_v213_*')
+        saved = json.loads((folder/'reconstruction_settings_and_timings.json').read_text())
+        assert saved['accepted_run']['options']['antialias_strength'] == 0
+        assert saved['accepted_run']['options']['stroke_strength'] == 0
+        assert saved['requested_options']['stroke_strength'] == 100
+        assert (folder/'share_reconstruction_test.zip').exists()
+        assert 'Reconstruction comparison saved:' in app.status.get()
+        assert app.result is retained
+    finally:
+        close_app(root)
+
+
 def test_ui_stroke_preview_has_full_power_and_reuses_fixed_color_pixels(tmp_path, monkeypatch):
     import numpy as np
     from stable_shift import engine
