@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 ROOT_FILES = ('README.md', 'requirements.txt', 'app.py',
               'START_Stable_Shift.bat', 'CLEANUP_OLD_FILES.bat')
 MAINTENANCE_FILES = ('tools/__init__.py', 'tools/tidy_legacy_files.py')
-USER_DOCS = ('docs/STANDALONE.md', 'docs/CLEANUP.md', 'docs/VALIDATION_V29.md', 'docs/VALIDATION_V210.md')
+USER_DOCS = ('docs/STANDALONE.md', 'docs/CLEANUP.md', 'docs/VALIDATION_V29.md', 'docs/VALIDATION_V210.md', 'docs/VALIDATION_V211.md')
 
 
 def build_standalone(output, root=ROOT):
@@ -35,7 +35,7 @@ def build_standalone(output, root=ROOT):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--out', type=Path, default=ROOT/'dist/Stable-Shift-v2.10.zip')
+    parser.add_argument('--out', type=Path, default=ROOT/'dist/Stable-Shift-v2.11.zip')
     args = parser.parse_args()
     print(build_standalone(args.out))
 

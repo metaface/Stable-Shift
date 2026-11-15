@@ -152,10 +152,15 @@ def test_color_comparison_uses_one_backend_and_matches_normal_run_colors(tmp_pat
     assert summary['cleanup_run']['options']['antialias_strength'] == 0
     assert summary['cleanup_run']['options']['color_match'] is False
     assert summary['cleanup_run']['options']['stroke_strength'] == 0
-    for method, name in (('Classic', '01_classic.png'), ('Robust global', '02_robust_global.png')):
+    for method, name in (('Classic', '01_classic.png'), ('Robust global', '03_robust_global.png')):
         normal, _ = restore_quality(reference, image, replace(options, color_method=method, antialias_strength=0, stroke_strength=0))
         assert np.array_equal(np.asarray(normal), np.asarray(Image.open(tmp_path/name)))
     with ZipFile(tmp_path/'share_color_test.zip') as archive:
-        assert {'edited_source.png', 'color_reference.png', '01_classic.png', '02_robust_global.png'} <= set(archive.namelist())
+        assert {'edited_source.png', 'color_reference.png', '01_classic.png', '02_robust_previous.png', '03_robust_global.png'} <= set(archive.namelist())
         saved = json.loads(archive.read('color_settings_and_timings.json'))
         assert saved['requested_options']['antialias_strength'] == 100
+    fitted = summary['methods']['Robust global']
+    if fitted['selected_method'] == 'Robust global':
+        previous = GlobalColor(np.asarray(fitted['matrix']), np.asarray(fitted['source_pivot']), np.asarray(fitted['reference_pivot']))
+        expected = previous.apply(np.asarray(Image.open(tmp_path/'00_before_color.png')))
+        assert np.array_equal(expected, np.asarray(Image.open(tmp_path/'02_robust_previous.png')))

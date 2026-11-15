@@ -42,7 +42,7 @@ python -m tools.build_standalone
 
 The optional handoff/replay CLIs and historical line/blotch comparison exporters live in `tools/`; the GUI does not import them. Tests retain coverage of their underlying behavior. Developer code should import `stable_shift.engine`, `stable_shift.automatic_strength` and related modules instead of old root module names.
 
-The builder writes `dist/Stable-Shift-v2.10.zip`. The ZIP includes the runtime package, launchers, base requirements, user documentation and the small backup helper. It excludes tests, historical comparison/replay tools, the builder itself, virtual environments, caches and generated/user images. ZIP timestamps and ordering are fixed so rebuilding the same inputs produces identical bytes.
+The builder writes `dist/Stable-Shift-v2.11.zip`. The ZIP includes the runtime package, launchers, base requirements, user documentation and the small backup helper. It excludes tests, historical comparison/replay tools, the builder itself, virtual environments, caches and generated/user images. ZIP timestamps and ordering are fixed so rebuilding the same inputs produces identical bytes.
 
 ## Verification of the earlier layout cleanup
 

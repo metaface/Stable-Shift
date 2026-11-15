@@ -1,4 +1,4 @@
-"""Stable Shift v2.10 — non-generative image restoration.
+"""Stable Shift v2.11 — non-generative image restoration.
 
 The reference supplies palette information only in Restore Quality. Structural analysis and optional V2 surface cleanup use the edited/denoised image. No Forge hooks.
 """
@@ -207,18 +207,17 @@ def correct_palette(clean, local_rgb, rgb, opts):
     report={'requested_method':opts.color_method,'selected_method':'Off'}
     if not opts.color_match:
         return rgb,report
-    if opts.color_method=='Robust global':
-        from .global_color import fit_global_color
-        transform,report=fit_global_color(clean,local_rgb)
-        if report['selected_method']=='Robust global':
-            return transform.apply(rgb),report
     if opts.blotch_strength>0:
         from .frozen_palette import freeze_palette
-        rgb=freeze_palette(clean,local_rgb).apply(rgb)
+        classic_rgb=freeze_palette(clean,local_rgb).apply(rgb)
     else:
-        rgb=_palette(clean,rgb)
+        classic_rgb=_palette(clean,rgb)
+    if opts.color_method=='Robust global':
+        from .global_color import apply_global_palette
+        _,corrected,report=apply_global_palette(clean,local_rgb,rgb,classic_rgb)
+        return corrected,report
     report['selected_method']='Classic'
-    return rgb,report
+    return classic_rgb,report
 
 
 def _denoise_candidate(raw, opts, maps):
@@ -430,7 +429,7 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     if diagnostics:
         maps.update(stage_diagnostics(original,denoised_rgb,cleanup_rgb,rgb,colored=palette_rgb,stroked=stroke_rgb))
     diagnostics_finished=perf_counter()
-    maps['report']={'version':'2.10','backend':opts.method,'resolution':list(edited.size),
+    maps['report']={'version':'2.11','backend':opts.method,'resolution':list(edited.size),
         'source_analysis_seconds':analyzed-start,'denoise_seconds':denoised-analyzed,
         'cleanup_seconds':cleaned-denoised,'color_seconds':colored-cleaned,
         'stroke_seconds':stroked-colored,'antialias_seconds':finished-stroked,

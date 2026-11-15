@@ -1,6 +1,16 @@
-# Stable Shift V2.10 — standalone guide
+# Stable Shift V2.11 — standalone guide
 
 The active code now lives in `stable_shift/`. See [cleanup notes](CLEANUP.md) for upgrading an existing folder and backing up old root scripts.
+
+## Restoring shading contrast after color correction
+
+V2.11 addresses the foreground tree's softened-looking shading under Robust global. The denoiser and surface cleanup are unchanged. The RGB fit itself is unchanged too. Classic can retain extra tonal transitions from the local-cleanup baseline; the native RGB rendering can make those transitions less distinct.
+
+Robust global now restores supported source lightness contrast after the RGB fit. It compares Classic and RGB renderings of the same cleaned image, removes fine variation and broad lighting differences, and restores coherent tonal differences in CIELAB L. The a/b colors come from the successful RGB rendering. Gamut clipping and 8-bit conversion can cause small final chroma differences. Directionless fine grain and quiet regions receive little or no change. Corrections are bounded to four L units, and sub-step changes are bypassed to avoid unrelated round-trip RGB changes. This is source-derived contrast restoration, not reference geometry transfer or a new denoising mask.
+
+Use **Compare colors** with the usual pair. It runs upstream processing once and fits the RGB transform once. `01_classic.png` is unchanged Classic; `02_robust_previous.png` is the exact previous RGB result; `03_robust_global.png` restores shading contrast with that same fit. Compare 02 and 03. The folder also retains `00_before_color.png`, full inputs, a contact sheet and native crops, now including the left background/tree area. `share_color_test.zip` includes all four outputs when they fit in the existing budget. Strokes and AA are off in every color-comparison output. Normal Run with Robust global uses 03's behavior.
+
+No extra slider is required. The saved color report records the tonal adjustment separately from the RGB fit metrics. Those fit metrics still describe the raw RGB transform, before contrast restoration. Classic and Classic fallback remain exact. The tonal adjustment can emphasize coherent source texture as well as shading; it does not recognize object types. See [V2.11 validation](VALIDATION_V211.md).
 
 ## Stroke cleanup
 
@@ -22,7 +32,7 @@ V2.9 keeps accepted V2.8 denoising, source tracing and cleanup unchanged. **Clas
 
 The fit uses robust residual weights to reduce the influence of changed objects. Separate held-out tiles compare it against Classic. It falls back to the exact Classic path for insufficient color diversity, collapsing/extreme transforms, poor paired agreement, or no meaningful improvement. The report and status record which method was actually selected and why. These checks are conservative fit heuristics, not a semantic assessment. Differently composed references may fall back even when their palette is useful; Classic remains available for that use. Clipped colors or distinct colors already collapsed together cannot always be recovered by one global transform.
 
-Start with **Compare colors**. It runs the currently configured denoising and cleanup once. Both color methods receive that exact cleaned image and use the same local baseline from before broad correction. Reference correction is on and **stroke cleanup and AA are off** for this comparison, regardless of finishing controls. The new `color_test_v29_<timestamp>` folder contains `00_before_color.png`, `01_classic.png`, `02_robust_global.png`, full inputs, source protection, settings/fit reports, native crops and a contact sheet. The Robust global file can match Classic when fallback is selected. `share_color_test.zip` includes the three full outputs, inputs, protection and JSON when they fit within 30 MiB; otherwise individual files remain. Large raw NPZ maps are not part of this color test.
+Start with **Compare colors**. It runs the currently configured denoising and cleanup once. Both color methods receive that exact cleaned image and use the same local baseline from before broad correction. Reference correction is on and **stroke cleanup and AA are off** for this comparison, regardless of finishing controls. The new `color_test_v29_<timestamp>` folder contains `00_before_color.png`, `01_classic.png`, `02_robust_previous.png`, `03_robust_global.png`, full inputs, source protection, settings/fit reports, native crops and a contact sheet. Both global files can match Classic when fallback is selected. `share_color_test.zip` includes the four full outputs, inputs, protection and JSON when they fit within 30 MiB; otherwise individual files remain. Large raw NPZ maps are not part of this color test.
 
 For normal Run, choose the desired method in **Color method**. The Reference color correction checkbox still controls whether it runs at all. No denoiser strength is changed by the color method. The older Compare auto retains its shared Classic palette field and disables AA; Legacy manual comparison also uses Classic with AA off.
 
