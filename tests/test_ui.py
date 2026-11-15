@@ -318,6 +318,47 @@ def test_ui_reconstruction_comparison_exports_four_candidates_and_retains_run_re
         close_app(root)
 
 
+def test_ui_line_border_comparison_exports_one_fixed_pyramid_pair(tmp_path, monkeypatch):
+    import json
+    from stable_shift.app import filedialog, messagebox
+    from tests.test_line_borders import seam
+    root, app = make_app()
+    try:
+        def fail(*args, **kwargs):
+            pytest.fail('Unexpected UI error: '+str(args))
+        monkeypatch.setattr(messagebox, 'showerror', fail)
+        monkeypatch.setattr(messagebox, 'showwarning', fail)
+        path = tmp_path/'seam.png'
+        Image.fromarray(seam()[0]).save(path)
+        app.set_image('edited', path)
+        app.palette.set(False)
+        app.method.set('Region cleanup only')
+        app.strokes_enabled.set(True)
+        app.aa_enabled.set(True)
+        retained = Image.new('RGB', (7, 9), 'red')
+        app.result = retained
+        monkeypatch.setattr(filedialog, 'askdirectory', lambda **kwargs: str(tmp_path))
+        app.compare_line_borders()
+        deadline = time.monotonic()+15
+        while app.busy and time.monotonic() < deadline:
+            root.update()
+            time.sleep(.01)
+        assert not app.busy
+        folder, = tmp_path.glob('line_border_test_v214_*')
+        saved = json.loads((folder/'line_border_settings_and_timings.json').read_text())
+        assert saved['accepted_run']['options']['antialias_strength'] == 0
+        assert saved['accepted_run']['options']['stroke_strength'] == 0
+        assert saved['line_border_cleanup']['strength'] == 100
+        assert saved['observed_ink_pixels_changed_after_shared_color'] == 0
+        assert (folder/'01_pyramid_v213.png').exists()
+        assert (folder/'02_clean_line_borders.png').exists()
+        assert (folder/'share_line_border_test.zip').exists()
+        assert 'Line border comparison saved:' in app.status.get()
+        assert app.result is retained
+    finally:
+        close_app(root)
+
+
 def test_ui_stroke_preview_has_full_power_and_reuses_fixed_color_pixels(tmp_path, monkeypatch):
     import numpy as np
     from stable_shift import engine

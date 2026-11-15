@@ -1,4 +1,18 @@
-# Stable Shift V2.13 — standalone guide
+# Stable Shift V2.14 — standalone guide
+
+## Line borders on the preferred pyramid
+
+Choose **Compare line borders** with the usual inputs/settings and source-line tracing enabled. The test exports two full-resolution images: `01_pyramid_v213.png`, the previous pyramid, and `02_clean_line_borders.png`, the same pyramid with border cleanup at 100. Both share one global RGB correction. Stroke cleanup and AA are off. The existing reconstruction comparison and normal Run are unchanged.
+
+Traced source edges have an expanded protection band that includes adjacent paint. Copying that entire band back can restore a light/noisy fringe after the broad surface was cleaned. The new test separates measured dark ink from that larger band. One-sided rays sample the reconstructed coarse paint, stopping at another measured stroke. Gentle supported paint trends are extrapolated to avoid replacing a clean gradient with a flat strip. Strong color/profile disagreement rejects uncertain samples.
+
+Measured ink pixels keep their previous RGB. Paint is cleaned within six native pixels of ink. In the old wide core, a simple observed-ink/clean-paint model also removes off-color contamination from partially covered edge pixels without explicitly smoothing their coverage along the stroke. Outside that core the filter cleans paint only; it does not add a native opacity residual. This is not fixed black repainting or a global blur.
+
+The last pixel of the outer cleanup reach fades toward the unchanged pyramid; the filter has full effect next to ink. There is no extra fade that excludes the immediate paint flank. Old wide-core pixels are deliberately allowed to change, and the report counts those changes separately from measured ink.
+
+The output folder includes the pair, full inputs, independent coarse layers, before-color outputs, native crops, original wide protection, measured ink, changed pixels, raw signed evidence and settings/timings. `share_line_border_test.zip` retains the required full images and supporting files within 30 MiB; larger raw evidence stays outside it.
+
+This is a source-image measurement, not semantic recognition. Congested gaps can have too little same-side paint support. Faint highlights or low-coverage pigment details can be confused with fringe, and pre-existing irregular ink geometry remains. Measured-ink equality is not proof that every visible line or nearby shading is unchanged. See [line-border validation](VALIDATION_V214.md).
 
 ## Experimental reconstruction comparison
 

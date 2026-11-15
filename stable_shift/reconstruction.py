@@ -182,6 +182,26 @@ def _gradient_models(labels, half, quarter, forbidden):
     return models, reports
 
 
+def pyramid_field(full, half, quarter, capture_paint=False):
+    """Rebuild LAB paint once; optionally expose the clean coarse field."""
+    half_rebuilt = .5*_up(quarter, half)+.5*half
+    pyramid = _up(half_rebuilt, full)
+    paint = pyramid.copy() if capture_paint else None
+    # Restore a denoised fine difference only where its gradient direction is
+    # also supported by the already rebuilt coarse image.
+    gradients = []
+    for layer in (full, pyramid):
+        guide = cv2.GaussianBlur(layer, (0, 0), 1.)
+        gradients.append(np.stack([cv2.Sobel(guide, cv2.CV_32F, dx, dy)/8 for dx, dy in ((1, 0), (0, 1))], axis=-1))
+    a, b = gradients
+    ea, eb = np.sum(a*a, axis=(2, 3)), np.sum(b*b, axis=(2, 3))
+    alignment = np.maximum(0, np.sum(a*b, axis=(2, 3))/np.maximum(1e-6, np.sqrt(ea*eb)))
+    detail_weight = _ramp(.08, .30, np.sqrt(eb))*_ramp(.65, .95, alignment)
+    pyramid += (full-pyramid)*detail_weight[:, :, None]
+    del gradients, a, b, ea, eb, alignment
+    return pyramid, paint, detail_weight
+
+
 def reconstruct(full_rgb, half_rgb, quarter_rgb, protected=None, texture_permission=None):
     """Return three full-strength candidates and explicit diagnostic evidence.
 
@@ -202,20 +222,7 @@ def reconstruct(full_rgb, half_rgb, quarter_rgb, protected=None, texture_permiss
     if texture_permission is not None and np.shape(texture_permission) != (h, w):
         raise ValueError('Texture permission must match full resolution.')
     full, half, quarter = [_lab(a) for a in (full_rgb, half_rgb, quarter_rgb)]
-    half_rebuilt = .5*_up(quarter, half)+.5*half
-    pyramid = _up(half_rebuilt, full)
-    # Restore a denoised fine difference only where its gradient direction is
-    # also supported by the already rebuilt coarse image.
-    gradients = []
-    for layer in (full, pyramid):
-        guide = cv2.GaussianBlur(layer, (0, 0), 1.)
-        gradients.append(np.stack([cv2.Sobel(guide, cv2.CV_32F, dx, dy)/8 for dx, dy in ((1, 0), (0, 1))], axis=-1))
-    a, b = gradients
-    ea, eb = np.sum(a*a, axis=(2, 3)), np.sum(b*b, axis=(2, 3))
-    alignment = np.maximum(0, np.sum(a*b, axis=(2, 3))/np.maximum(1e-6, np.sqrt(ea*eb)))
-    detail_weight = _ramp(.08, .30, np.sqrt(eb))*_ramp(.65, .95, alignment)
-    pyramid += (full-pyramid)*detail_weight[:, :, None]
-    del gradients, a, b, ea, eb, alignment
+    pyramid, _, detail_weight = pyramid_field(full, half, quarter)
     pyramid_rgb = _rgb(pyramid)
     pyramid_rgb[core] = full_rgb[core]
     labels, barriers = _edge_regions(pyramid, core)

@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.13** adds an isolated reconstruction comparison: quarter-to-half-to-full processing, solid paint regions, and solid regions with supported smooth gradients. Normal Run retains the accepted V2.12 processing. No new dependencies.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.14** tests cleanup of noisy/light paint fringes next to ink in the preferred quarter-to-half-to-full reconstruction. Normal Run retains the accepted V2.12 processing; the previous reconstruction comparison is retained. No new dependencies.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -9,6 +9,14 @@ Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited 
 For a Git checkout, close the app and pull the branch you are testing with Git Bash. Git handles tracked file removals; no cleanup script is needed. Keep using **START_Stable_Shift.bat**. The existing `.venv` is reused; this version adds no dependencies.
 
 For a fresh ZIP installation, extract into a new folder and use the Start launcher. It installs base requirements; optional CPU/GPU BM3D can be installed with the app buttons. For older installations updated by copying a ZIP over existing files, see [cleanup notes](docs/CLEANUP.md). `python app.py` remains supported.
+
+## Compare line borders on the preferred pyramid
+
+Load your usual pair and keep source-line tracing enabled. Choose **Compare line borders**. It produces `01_pyramid_v213.png` and `02_clean_line_borders.png` from one fixed pyramid, with the same global colors and stroke cleanup/AA off. The border candidate is applied at full strength; there are no extra settings to tune for this test.
+
+The old source-line mask includes paint outside the ink and copies that paint back into the reconstructed image. This experiment measures darker ink profiles separately and estimates adjacent paint from the clean coarse field on the same side of each stroke. It cleans paint closer to ink and removes off-color contamination from partially covered edge pixels, while retaining measured ink and stronger coverage. Old wide-core paint pixels are intentionally allowed to change.
+
+Check the bib pocket, waist seams, faint strokes and opposite sides of outlines. Full inputs/results, native crops, measured-ink/change maps and `share_line_border_test.zip` are exported. Tight gaps and ambiguous shapes can retain fringe; low-coverage details can also be mistaken for paint. The normal Run and existing reconstruction comparison are unchanged. See [line-border validation](docs/VALIDATION_V214.md).
 
 ## Compare reconstruction and solid colors
 

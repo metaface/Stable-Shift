@@ -39,7 +39,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.13 — Reconstruction Comparison')
+        root.title('Stable Shift V2.14 — Line Border Comparison')
         root.geometry('1400x940')
         root.minsize(1040, 760)
         self.images = {'clean': None, 'edited': None}
@@ -152,7 +152,8 @@ class App:
         reconstruction = ttk.Frame(controls)
         reconstruction.pack(fill='x', pady=3)
         ttk.Button(reconstruction, text='Compare reconstruction', command=self.compare_reconstruction).pack(side='left', padx=7)
-        ttk.Label(reconstruction, text='Experimental: pyramid / solid colors / smooth gradients. Normal Run retains V2.12 cleanup.').pack(side='left', padx=5)
+        ttk.Button(reconstruction, text='Compare line borders', command=self.compare_line_borders).pack(side='left', padx=7)
+        ttk.Label(reconstruction, text='Experimental comparisons. Normal Run retains V2.12 cleanup.').pack(side='left', padx=5)
         ttk.Label(strokes, text='100 applies the full candidate.').pack(side='left', padx=7)
         self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
         ag = ttk.Frame(self.advanced)
@@ -480,6 +481,31 @@ class App:
                 self.queue.put(('error', (str(exc), traceback.format_exc())))
         Thread(target=worker, daemon=True).start()
 
+    def compare_line_borders(self):
+        if self.busy:
+            return
+        if self.mode.get() != 'Restore Quality':
+            messagebox.showinfo('Compare line borders', 'This comparison is for Restore Quality.')
+            return
+        try:
+            clean, edited, opts = self.snapshot()
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Inputs/settings', str(exc))
+            return
+        parent = filedialog.askdirectory(title='Choose parent folder for a line border comparison')
+        if not parent:
+            return
+        directory = Path(parent)/datetime.now().strftime('line_border_test_v214_%Y%m%d_%H%M%S_%f')
+        self.begin('Comparing the same pyramid with previous borders and adjacent paint cleanup')
+        def worker():
+            try:
+                from .reconstruction_comparison import export_line_border_comparison
+                summary = export_line_border_comparison(clean, edited, opts, directory, self.progress)
+                self.queue.put(('line_borders_compared', (directory, summary)))
+            except Exception as exc:
+                self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
     def preview_antialias(self):
         if self.busy:
             return
@@ -635,6 +661,11 @@ class App:
                     self.status.set('Reconstruction comparison saved: '+str(directory)+' | '+(summary['share_zip'] or 'Full images exceed ZIP size limit.'))
                     color = summary['color_correction']
                     self.result_info.set('Compare the four saved results and native crops. Shared colors: '+color['selected_method']+'. '+color['reason'])
+                elif kind == 'line_borders_compared':
+                    directory, summary = data
+                    report = summary['line_border_cleanup']
+                    self.status.set('Line border comparison saved: '+str(directory)+' | '+(summary['share_zip'] or 'Full images exceed ZIP size limit.'))
+                    self.result_info.set(f'Same pyramid/colors, finishing off. Border cleanup changed {report["changed_pixels_percent"]:.2f}% | Old wide-core pixels may change; measured ink retained.')
                 elif kind == 'strokes_compared':
                     directory, summary = data
                     candidate = summary['candidate']
