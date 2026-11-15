@@ -159,3 +159,8 @@ def test_color_comparison_uses_one_backend_and_matches_normal_run_colors(tmp_pat
         assert {'edited_source.png', 'color_reference.png', '01_classic.png', '02_robust_global.png'} <= set(archive.namelist())
         saved = json.loads(archive.read('color_settings_and_timings.json'))
         assert saved['requested_options']['antialias_strength'] == 100
+    fitted = summary['methods']['Robust global']
+    if fitted['selected_method'] == 'Robust global':
+        previous = GlobalColor(np.asarray(fitted['matrix']), np.asarray(fitted['source_pivot']), np.asarray(fitted['reference_pivot']))
+        expected = previous.apply(np.asarray(Image.open(tmp_path/'00_before_color.png')))
+        assert np.array_equal(expected, np.asarray(Image.open(tmp_path/'02_robust_global.png')))

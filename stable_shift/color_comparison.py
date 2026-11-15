@@ -42,7 +42,7 @@ def export_color_comparison(reference, edited, options, directory, progress=None
         sheet.paste(thumb, (500*i+(500-thumb.width)//2, 38))
         ImageDraw.Draw(sheet).text((500*i+8, 10), title, fill='white')
     sheet.save(directory/'color_comparison.jpg', quality=95)
-    for i, (fx, fy) in enumerate(((.40, .24), (.60, .58), (.76, .25)), 1):
+    for i, (fx, fy) in enumerate(((.40, .24), (.60, .58), (.76, .25), (.08, .54), (.67, .69), (.81, .47)), 1):
         size = min(256, edited.width, edited.height)
         left = max(0, min(edited.width-size, round(edited.width*fx-size/2)))
         top = max(0, min(edited.height-size, round(edited.height*fy-size/2)))
@@ -52,7 +52,7 @@ def export_color_comparison(reference, edited, options, directory, progress=None
             ImageDraw.Draw(sheet).text((column*(size+10)+2, 8), title, fill='white')
         sheet.save(directory/f'color_crop_{i}_x{left}_y{top}_100percent.png')
     names = [name for name, _, _ in views]+['edited_source.png', 'color_reference.png', 'source_protection.png']
-    summary = {'version': '2.9', 'requested_options': asdict(options),
+    summary = {'version': '2.12', 'requested_options': asdict(options),
                'cleanup_run': maps['report'], 'methods': reports,
                'comparison': 'One unchanged cleanup result; Classic versus Robust global. Reference correction on; stroke cleanup and antialiasing off in both.',
                'processing_seconds': perf_counter()-started,

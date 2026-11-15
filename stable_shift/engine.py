@@ -1,4 +1,4 @@
-"""Stable Shift v2.10 — non-generative image restoration.
+"""Stable Shift v2.12 — non-generative image restoration.
 
 The reference supplies palette information only in Restore Quality. Structural analysis and optional V2 surface cleanup use the edited/denoised image. No Forge hooks.
 """
@@ -430,7 +430,7 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     if diagnostics:
         maps.update(stage_diagnostics(original,denoised_rgb,cleanup_rgb,rgb,colored=palette_rgb,stroked=stroke_rgb))
     diagnostics_finished=perf_counter()
-    maps['report']={'version':'2.10','backend':opts.method,'resolution':list(edited.size),
+    maps['report']={'version':'2.12','backend':opts.method,'resolution':list(edited.size),
         'source_analysis_seconds':analyzed-start,'denoise_seconds':denoised-analyzed,
         'cleanup_seconds':cleaned-denoised,'color_seconds':colored-cleaned,
         'stroke_seconds':stroked-colored,'antialias_seconds':finished-stroked,

@@ -39,7 +39,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.10 — Stroke Cleanup')
+        root.title('Stable Shift V2.12 — Stable Color Correction')
         root.geometry('1400x940')
         root.minsize(1040, 760)
         self.images = {'clean': None, 'edited': None}
@@ -441,7 +441,7 @@ class App:
         if not parent:
             return
         directory = Path(parent)/datetime.now().strftime('color_test_v29_%Y%m%d_%H%M%S_%f')
-        self.begin('One cleanup run, then comparing color methods with AA off')
+        self.begin('One cleanup run, then comparing stable color methods with finishing off')
         def worker():
             try:
                 from .color_comparison import export_color_comparison
@@ -600,7 +600,7 @@ class App:
                     directory, summary = data
                     robust = summary['methods']['Robust global']
                     self.status.set('Color comparison saved: '+str(directory)+' | '+(summary['share_zip'] or 'Full images exceed ZIP size limit.'))
-                    self.result_info.set('Same cleaned image; AA off. Robust global selected: '+robust['selected_method']+' | '+robust.get('reason', ''))
+                    self.result_info.set('Same cleaned image; finishing off. 02 uses the accepted RGB-only correction. Selected: '+robust['selected_method'])
                 elif kind == 'strokes_compared':
                     directory, summary = data
                     candidate = summary['candidate']

@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.10** adds optional stroke cleanup to the accepted denoising and V2.9 color correction. It repairs existing colored ink using samples along the stroke, after color correction and before optional AA. No new dependencies.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.12** restores the accepted V2.10 RGB-only color correction after V2.11's shading-restoration pass brought blotches back. Denoising, stroke cleanup and AA are unchanged. No new dependencies.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -9,6 +9,14 @@ Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited 
 For a Git checkout, close the app and pull the branch you are testing with Git Bash. Git handles tracked file removals; no cleanup script is needed. Keep using **START_Stable_Shift.bat**. The existing `.venv` is reused; this version adds no dependencies.
 
 For a fresh ZIP installation, extract into a new folder and use the Start launcher. It installs base requirements; optional CPU/GPU BM3D can be installed with the app buttons. For older installations updated by copying a ZIP over existing files, see [cleanup notes](docs/CLEANUP.md). `python app.py` remains supported.
+
+## Restored clean color correction
+
+Choose **Robust global** for normal Run. It again applies only the fitted RGB transform to the fully cleaned image. The failed V2.11 shading-restoration pass has been removed, including its normal and comparison paths. It no longer transfers variation from the earlier cleanup baseline into the result.
+
+**Compare colors** exports `01_classic.png` and `02_robust_global.png` from the same cleaned image with strokes/AA off. Additional native crops cover the tree, foreground thigh and tail. `share_color_test.zip` retains the full inputs and outputs within the existing budget.
+
+The foreground tree's softer shading remains an open issue at its V2.10 level. This update restores the accepted clean result without another shading experiment. See [regression validation](docs/VALIDATION_V212.md).
 
 ## Test stroke cleanup at full strength
 

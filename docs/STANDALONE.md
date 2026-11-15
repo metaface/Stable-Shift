@@ -1,6 +1,16 @@
-# Stable Shift V2.10 — standalone guide
+# Stable Shift V2.12 — standalone guide
 
 The active code now lives in `stable_shift/`. See [cleanup notes](CLEANUP.md) for upgrading an existing folder and backing up old root scripts.
+
+## V2.11 blotch regression removed
+
+V2.12 removes V2.11's shading-restoration stage and restores the accepted V2.10 Robust global behavior. The attempted fix used lightness differences from Classic, including variation from the local-cleanup baseline before broad correction. That variation included coherent blotches. Tests for fine grain and one tree contrast measurement did not establish that cleaned surfaces stayed clean.
+
+Robust global again applies only its global RGB transform to the fully cleaned pixels. The earlier baseline still estimates global coefficients, as before, but no spatial residual from that baseline is added to the output. When the fit selects Robust global, identical cleaned RGB pixels receive identical corrected RGB values regardless of position or the earlier baseline's local blotches. Classic fallback remains unchanged.
+
+Choose **Robust global** for normal Run, or **Compare colors** for `01_classic.png` versus `02_robust_global.png`. Strokes and AA remain off in that comparison. Six native crops now include the tree-root area, thigh and tail so tonal regressions are visible alongside the line-work crops. The withdrawn V2.11 output is not a product option. Denoising, automatic strength, source tracing, surface cleanup, stroke cleanup and AA are unchanged.
+
+The tree shading remains at the accepted V2.10 level. A replacement fix must preserve cleaned surfaces as well as shading; no further shading reconstruction is enabled in this update. See [regression validation](VALIDATION_V212.md).
 
 ## Stroke cleanup
 
