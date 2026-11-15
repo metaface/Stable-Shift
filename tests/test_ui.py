@@ -278,3 +278,103 @@ def test_ui_color_comparison_exports_one_fixed_cleanup(tmp_path, monkeypatch):
         assert 'Color comparison saved:' in app.status.get()
     finally:
         close_app(root)
+
+
+def test_ui_stroke_preview_has_full_power_and_reuses_fixed_color_pixels(tmp_path, monkeypatch):
+    import numpy as np
+    from stable_shift import engine
+    from stable_shift.app import messagebox
+    from tests.test_stroke_cleanup import strokes
+    root, app = make_app()
+    try:
+        def fail(*args, **kwargs):
+            pytest.fail('Unexpected UI error: '+str(args))
+        monkeypatch.setattr(messagebox, 'showerror', fail)
+        monkeypatch.setattr(messagebox, 'showwarning', fail)
+        calls = []
+        def backend(rgb, *args):
+            calls.append(args)
+            return rgb.copy()
+        monkeypatch.setattr(engine, '_bm3d', backend)
+        path = tmp_path/'colored strokes.png'
+        Image.fromarray(strokes()[1]).save(path)
+        app.set_image('edited', path)
+        app.palette.set(False)
+        app.method.set('CPU BM3D')
+        app.automatic.set(False)
+        app.cleanup.set(0)
+        app.blotch_strength.set(0)
+        assert not app.strokes_enabled.get()
+        assert app.stroke_strength.get() == 100
+        def finish():
+            deadline = time.monotonic()+15
+            while app.busy and time.monotonic() < deadline:
+                root.update()
+                time.sleep(.01)
+            assert not app.busy
+        app.run()
+        finish()
+        original = np.asarray(app.result).copy()
+        app.strokes_enabled.set(True)
+        app.noise.set(0)  # Preview must retain the settings actually run.
+        app.preview_strokes()
+        finish()
+        full = np.asarray(app.result).copy()
+        assert len(calls) == 1
+        assert np.any(full != original)
+        assert app.maps['report']['options']['noise'] == 100
+        assert app.maps['report']['options']['stroke_strength'] == 100
+        app.preview_strokes()
+        finish()
+        assert np.array_equal(np.asarray(app.result), full)
+        app.aa_enabled.set(True)
+        app.preview_antialias()
+        finish()
+        assert app.maps['report']['options']['stroke_strength'] == 100
+        assert np.array_equal(app.post_color, original)
+        app.strokes_enabled.set(False)
+        app.aa_enabled.set(False)
+        app.preview_strokes()
+        finish()
+        assert np.array_equal(np.asarray(app.result), original)
+        assert len(calls) == 1
+        app.set_image('edited', path)
+        assert app.post_color is None and app.pre_antialias is None
+    finally:
+        close_app(root)
+
+
+def test_ui_stroke_comparison_exports_0_60_100_with_aa_off(tmp_path, monkeypatch):
+    import json
+    from stable_shift.app import filedialog, messagebox
+    from tests.test_stroke_cleanup import strokes
+    root, app = make_app()
+    try:
+        def fail(*args, **kwargs):
+            pytest.fail('Unexpected UI error: '+str(args))
+        monkeypatch.setattr(messagebox, 'showerror', fail)
+        monkeypatch.setattr(messagebox, 'showwarning', fail)
+        path = tmp_path/'stitches.png'
+        Image.fromarray(strokes()[1]).save(path)
+        app.set_image('edited', path)
+        app.palette.set(False)
+        app.method.set('Region cleanup only')
+        app.strokes_enabled.set(True)
+        app.stroke_strength.set(20)
+        app.aa_enabled.set(True)
+        monkeypatch.setattr(filedialog, 'askdirectory', lambda **kwargs: str(tmp_path))
+        app.compare_strokes()
+        deadline = time.monotonic()+15
+        while app.busy and time.monotonic() < deadline:
+            root.update()
+            time.sleep(.01)
+        assert not app.busy
+        folder, = tmp_path.glob('stroke_test_v210_*')
+        saved = json.loads((folder/'stroke_settings_and_timings.json').read_text())
+        assert [run['strength'] for run in saved['runs']] == [0, 60, 100]
+        assert all(run['antialias_strength'] == 0 for run in saved['runs'])
+        assert saved['upstream_run']['options']['stroke_strength'] == 0
+        assert saved['requested_options']['stroke_strength'] == 20
+        assert (folder/'share_stroke_test.zip').exists()
+    finally:
+        close_app(root)

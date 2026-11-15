@@ -9,11 +9,14 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageOps
 
 
-def stage_diagnostics(original, denoised, cleaned, final, *, colored=None):
+def stage_diagnostics(original, denoised, cleaned, final, *, colored=None, stroked=None):
     if colored is None:
         colored = final
+    if stroked is None:
+        stroked = colored
     pairs = {'denoise': (original, denoised), 'cleanup': (denoised, cleaned),
-             'palette': (cleaned, colored), 'antialias': (colored, final),
+             'palette': (cleaned, colored), 'stroke': (colored, stroked),
+             'antialias': (stroked, final),
              'total': (original, final)}
     maps = {}
     for name, (before, after) in pairs.items():
@@ -53,7 +56,8 @@ def save_diagnostics(maps, directory, prefix=''):
     exact = {}
     binary = {'source_line_candidates', 'source_line_seeds', 'source_line_trace',
               'source_line_core', 'source_line_trace_base', 'source_line_rescued',
-              'source_line_added_core', 'v2_boundaries', 'blotch_boundaries'}
+              'source_line_added_core', 'v2_boundaries', 'blotch_boundaries',
+              'stroke_support', 'stroke_continuous'}
     count = 0
     for name, field in maps.items():
         if not isinstance(field, np.ndarray):
@@ -84,7 +88,7 @@ def save_diagnostics(maps, directory, prefix=''):
     draw.text((20, 90), 'Binary protection maps: black = unprotected; white = protected.', fill='white')
     draw.text((20, 113), 'Colors visualize numbers. They do not identify the hue or type of noise.', fill='white')
     guide.save(directory/(prefix+'MAP_LEGEND.png'))
-    note = '''# Diagnostic map meanings — V2.9 color and optional antialiasing
+    note = '''# Diagnostic map meanings — V2.10 stroke cleanup
 
 - auto_luminance_strength / auto_chroma_strength: source-derived permission, 0–1, applied to each local/broad candidate correction before palette matching. These fields can reduce but never increase the requested cleanup. They are not noise probabilities.
 - auto_denoise_luminance_strength / auto_denoise_chroma_strength: permission applied to the guarded backend handoff. These allow a strong candidate in noisy colored interiors while retaining quieter gray structure elsewhere.
@@ -112,7 +116,11 @@ def save_diagnostics(maps, directory, prefix=''):
 - denoise_change: original edited input → denoiser + guards + automatic spatial limits handoff.
 - cleanup_change: that handoff → V2 surface cleanup, BEFORE reference color correction.
 - palette_change: cleaned image → reference color correction ONLY, before optional antialiasing.
-- antialias_change: post-color image → optional final antialiasing. Zero with AA off.
+- stroke_change / stroke_signed_rgb: post-color image → optional stroke cleanup. Actual native RGB changes; zero when off.
+- stroke_support: binary application area for the stroke candidate; it is not a do-not-change mask.
+- stroke_continuous: application pixels using the continuous-profile candidate. Other supported stroke pixels use ink-compatible samples to retain short dashes.
+- stroke_ridge: two-sided darker-stroke RGB contrast divided by 100. This is not semantic certainty or a probability.
+- antialias_change: post-stroke image → optional final antialiasing. Zero with AA off.
 - total_change: original edited input → final output. This is NOT a detected-noise map.
 - difference: compatibility alias for total change, scaled to 70 RGB levels instead of 16. Prefer the separate stage maps.
 - *_signed_rgb: native-resolution int16 RGB differences, AFTER minus BEFORE, in diagnostics_raw.npz. All signs and values are retained. Their previews use blue for negative, gray for zero, orange for positive, saturating at +/-16 levels, and may be resized.
@@ -122,7 +130,7 @@ def save_diagnostics(maps, directory, prefix=''):
 - v2_fine_weight / sample_support: reconstruction weights and available sample support; 0–1.
 - distance: legacy distance to hard boundaries; its preview saturates at 18 pixels.
 
-Only the edited image supplies structure. Palette changes can recolor protected line pixels and optional AA can filter them; protection is exact BEFORE color/AA.
+Only the edited image supplies structure. Palette, optional stroke cleanup and AA can change protected line pixels; protection is exact BEFORE color/strokes/AA. Denoise + cleanup + palette + stroke + antialias signed maps sum exactly to total.
 '''
     (directory/(prefix+'MAP_LEGEND.md')).write_text(note, encoding='utf-8')
     if 'report' in maps:

@@ -28,7 +28,7 @@ def comparison_plan(options):
 
 
 def export_comparison(clean, edited, options, directory, progress=None):
-    options = replace(options, auto_strength=False, color_method='Classic', antialias_strength=0)
+    options = replace(options, auto_strength=False, color_method='Classic', antialias_strength=0, stroke_strength=0)
     plan = comparison_plan(options)
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)

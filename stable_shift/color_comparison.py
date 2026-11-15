@@ -15,7 +15,7 @@ def export_color_comparison(reference, edited, options, directory, progress=None
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     started = perf_counter()
-    run_options = replace(options, color_match=False, antialias_strength=0)
+    run_options = replace(options, color_match=False, antialias_strength=0, stroke_strength=0)
     result, maps = restore_quality(reference, edited, run_options, diagnostics=True, progress=progress)
     cleaned = array(result)
     # Exact local baseline, before the broad stage, as in normal Run.
@@ -54,7 +54,7 @@ def export_color_comparison(reference, edited, options, directory, progress=None
     names = [name for name, _, _ in views]+['edited_source.png', 'color_reference.png', 'source_protection.png']
     summary = {'version': '2.9', 'requested_options': asdict(options),
                'cleanup_run': maps['report'], 'methods': reports,
-               'comparison': 'One unchanged cleanup result; Classic versus Robust global. Reference correction on, antialiasing off in both.',
+               'comparison': 'One unchanged cleanup result; Classic versus Robust global. Reference correction on; stroke cleanup and antialiasing off in both.',
                'processing_seconds': perf_counter()-started,
                'timing_note': 'Cleanup and each color fit have separate timings; processing_seconds also includes image exports.',
                'share_files': names, 'share_zip': 'share_color_test.zip'}

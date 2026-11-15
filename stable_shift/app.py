@@ -39,13 +39,14 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.9 — Color and Optional Antialiasing')
+        root.title('Stable Shift V2.10 — Stroke Cleanup')
         root.geometry('1400x940')
         root.minsize(1040, 760)
         self.images = {'clean': None, 'edited': None}
         self.paths = {}
         self.result = None
         self.pre_antialias = None
+        self.post_color = None
         self.maps = {}
         self.queue = Queue()
         self.busy = False
@@ -61,6 +62,8 @@ class App:
         self.color_method = tk.StringVar(value='Classic')
         self.aa_enabled = tk.BooleanVar(value=False)
         self.aa_strength = tk.DoubleVar(value=35)
+        self.strokes_enabled = tk.BooleanVar(value=False)
+        self.stroke_strength = tk.DoubleVar(value=100)
         self.source_guard = tk.BooleanVar(value=True)
         self.automatic = tk.BooleanVar(value=True)
         self.noise = tk.DoubleVar(value=100)
@@ -138,7 +141,15 @@ class App:
         ttk.Label(finishing, text='Strength:').pack(side='left')
         ttk.Spinbox(finishing, from_=0, to=100, width=5, textvariable=self.aa_strength).pack(side='left', padx=5)
         ttk.Button(finishing, text='Preview AA on last result', command=self.preview_antialias).pack(side='left', padx=8)
-        ttk.Label(finishing, text='AA is off in comparisons.').pack(side='left', padx=5)
+        ttk.Label(finishing, text='Color/auto: finishing off.').pack(side='left', padx=5)
+        strokes = ttk.Frame(controls)
+        strokes.pack(fill='x', pady=3)
+        ttk.Checkbutton(strokes, text='Stroke cleanup', variable=self.strokes_enabled).pack(side='left')
+        ttk.Label(strokes, text='Strength:').pack(side='left', padx=(12, 0))
+        ttk.Spinbox(strokes, from_=0, to=100, width=5, textvariable=self.stroke_strength).pack(side='left', padx=5)
+        ttk.Button(strokes, text='Preview strokes on last result', command=self.preview_strokes).pack(side='left', padx=7)
+        ttk.Button(strokes, text='Compare strokes 0 / 60 / 100', command=self.compare_strokes).pack(side='left', padx=7)
+        ttk.Label(strokes, text='100 applies the full candidate.').pack(side='left', padx=7)
         self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
         ag = ttk.Frame(self.advanced)
         ag.pack(fill='x')
@@ -283,6 +294,7 @@ class App:
         self.paths[key] = str(path)
         self.result = None
         self.pre_antialias = None
+        self.post_color = None
         self.maps = {}
         self.file_info.set(' | '.join(f'{name}: {Path(value).name} ({self.images[name].width} x {self.images[name].height})' for name, value in self.paths.items()))
         self.result_info.set('Input changed. Run again to create a result for this pair.')
@@ -309,7 +321,8 @@ class App:
                        cleanup_radius=self.cleanup_radius.get(), source_guard=self.source_guard.get(),
                        blotch_strength=self.blotch_strength.get(), auto_strength=self.automatic.get(),
                        color_method=self.color_method.get(),
-                       antialias_strength=self.aa_strength.get() if self.aa_enabled.get() else 0)
+                       antialias_strength=self.aa_strength.get() if self.aa_enabled.get() else 0,
+                       stroke_strength=self.stroke_strength.get() if self.strokes_enabled.get() else 0)
 
     def snapshot(self):
         if self.images['edited'] is None:
@@ -319,7 +332,9 @@ class App:
         opts = self.opts()
         from .region_cleanup import RegionOptions
         from .antialias import validate_strength
+        from .stroke_cleanup import validate_strength as validate_stroke
         validate_strength(opts.antialias_strength)
+        validate_stroke(opts.stroke_strength)
         RegionOptions(opts.cleanup, opts.cleanup_range, opts.cleanup_luma, opts.cleanup_radius).validated()
         edited = self.images['edited'].copy()
         clean = self.images['clean'].copy() if self.images['clean'] is not None else edited.copy()
@@ -440,7 +455,7 @@ class App:
         if self.busy:
             return
         if self.pre_antialias is None:
-            messagebox.showinfo('Preview AA', 'Run Restore Quality first. AA preview then reuses its post-color result.')
+            messagebox.showinfo('Preview AA', 'Run Restore Quality first. AA preview then reuses its pre-AA result.')
             return
         try:
             strength = self.aa_strength.get() if self.aa_enabled.get() else 0
@@ -450,12 +465,65 @@ class App:
             messagebox.showwarning('Antialias strength', str(exc))
             return
         pixels, maps = self.pre_antialias, self.maps
-        self.begin('Previewing AA on the last post-color result; no denoiser rerun')
+        self.begin('Previewing AA on the last pre-AA result; no upstream rerun')
         def worker():
             try:
                 from .antialias import refinish_antialias
                 rgb, updated = refinish_antialias(pixels, maps, strength)
                 self.queue.put(('result', (Image.fromarray(rgb), updated)))
+            except Exception as exc:
+                self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
+
+    def preview_strokes(self):
+        if self.busy:
+            return
+        if self.post_color is None:
+            messagebox.showinfo('Preview strokes', 'Run Restore Quality first. Stroke preview reuses its post-color result.')
+            return
+        try:
+            strength = self.stroke_strength.get() if self.strokes_enabled.get() else 0
+            aa = self.aa_strength.get() if self.aa_enabled.get() else 0
+            from .stroke_cleanup import validate_strength
+            from .antialias import validate_strength as validate_aa
+            validate_strength(strength)
+            validate_aa(aa)
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Finishing settings', str(exc))
+            return
+        pixels, maps = self.post_color, self.maps
+        self.begin('Previewing stroke cleanup from the last post-color result')
+        def worker():
+            try:
+                from .stroke_cleanup import refinish_strokes
+                rgb, updated = refinish_strokes(pixels, maps, strength, aa, self.progress)
+                self.queue.put(('result', (Image.fromarray(rgb), updated)))
+            except Exception as exc:
+                self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
+    def compare_strokes(self):
+        if self.busy:
+            return
+        if self.mode.get() != 'Restore Quality':
+            messagebox.showinfo('Compare strokes', 'This comparison is for Restore Quality.')
+            return
+        try:
+            clean, edited, opts = self.snapshot()
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Inputs/settings', str(exc))
+            return
+        parent = filedialog.askdirectory(title='Choose parent folder for a stroke comparison')
+        if not parent:
+            return
+        directory = Path(parent)/datetime.now().strftime('stroke_test_v210_%Y%m%d_%H%M%S_%f')
+        self.begin('One upstream run, then strokes at 0 / 60 / 100 with AA off')
+        def worker():
+            try:
+                from .stroke_comparison import export_stroke_comparison
+                summary = export_stroke_comparison(clean, edited, opts, directory, self.progress)
+                self.queue.put(('strokes_compared', (directory, summary)))
             except Exception as exc:
                 self.queue.put(('error', (str(exc), traceback.format_exc())))
         Thread(target=worker, daemon=True).start()
@@ -498,6 +566,8 @@ class App:
                     self.result, self.maps = data
                     signed = self.maps.get('antialias_signed_rgb')
                     self.pre_antialias = None if signed is None else np.uint8(np.asarray(self.result).astype(np.int16)-signed)
+                    stroke_signed = self.maps.get('stroke_signed_rgb')
+                    self.post_color = None if stroke_signed is None else np.uint8(self.pre_antialias.astype(np.int16)-stroke_signed)
                     report = self.maps['report']
                     parts = [report['backend']]
                     if report.get('automatic_strength', {}).get('enabled'):
@@ -509,8 +579,13 @@ class App:
                     color = report.get('color_correction', {})
                     if color:
                         self.status.set(self.status.get()+' | Color: '+color['selected_method']+' | AA '+str(report['options']['antialias_strength']))
+                    stroke_report = report.get('stroke_cleanup', {})
+                    if stroke_report.get('strength', 0) > 0:
+                        self.status.set(self.status.get()+f' | Strokes {stroke_report["strength"]:.0f}: changed {stroke_report["changed_pixels_percent"]:.1f}%')
+                    if 'finishing_preview_seconds' in report:
+                        self.status.set('Stroke/AA preview applied to the last post-color result. Other changes require Run / Preview. | Strokes '+str(report['options']['stroke_strength'])+' | AA '+str(report['options']['antialias_strength']))
                     if 'antialias_preview_seconds' in report:
-                        self.status.set('AA preview applied to the last post-color result. Other control changes require Run / Preview. | AA '+str(report['options']['antialias_strength']))
+                        self.status.set('AA preview applied; color and strokes retained from the last result. Other changes need Run or Preview strokes. | AA '+str(report['options']['antialias_strength']))
                     self.schedule_redraw()
                 elif kind == 'compared':
                     directory, reports = data
@@ -526,6 +601,11 @@ class App:
                     robust = summary['methods']['Robust global']
                     self.status.set('Color comparison saved: '+str(directory)+' | '+(summary['share_zip'] or 'Full images exceed ZIP size limit.'))
                     self.result_info.set('Same cleaned image; AA off. Robust global selected: '+robust['selected_method']+' | '+robust.get('reason', ''))
+                elif kind == 'strokes_compared':
+                    directory, summary = data
+                    candidate = summary['candidate']
+                    self.status.set('Stroke comparison saved: '+str(directory)+' | '+(summary['share_zip'] or 'Full images exceed ZIP size limit.'))
+                    self.result_info.set(f'Fixed colors / AA off. Stroke 100 changed {candidate["changed_pixels_percent"]:.2f}% | Candidate: {summary["stroke_candidate_seconds"]:.2f}s')
                 elif kind == 'installed':
                     self.status.set(data)
                 elif kind == 'error':

@@ -146,13 +146,14 @@ def test_color_comparison_uses_one_backend_and_matches_normal_run_colors(tmp_pat
         return cv2.GaussianBlur(raw, (3, 3), .5)
     monkeypatch.setattr(engine, '_bm3d', backend)
     options = Options(method='CPU BM3D', cleanup=60, blotch_strength=70,
-                      color_method='Robust global', antialias_strength=100, auto_strength=automatic)
+                      color_method='Robust global', antialias_strength=100, stroke_strength=100, auto_strength=automatic)
     summary = export_color_comparison(reference, image, options, tmp_path)
     assert len(calls) == 1
     assert summary['cleanup_run']['options']['antialias_strength'] == 0
     assert summary['cleanup_run']['options']['color_match'] is False
+    assert summary['cleanup_run']['options']['stroke_strength'] == 0
     for method, name in (('Classic', '01_classic.png'), ('Robust global', '02_robust_global.png')):
-        normal, _ = restore_quality(reference, image, replace(options, color_method=method, antialias_strength=0))
+        normal, _ = restore_quality(reference, image, replace(options, color_method=method, antialias_strength=0, stroke_strength=0))
         assert np.array_equal(np.asarray(normal), np.asarray(Image.open(tmp_path/name)))
     with ZipFile(tmp_path/'share_color_test.zip') as archive:
         assert {'edited_source.png', 'color_reference.png', '01_classic.png', '02_robust_global.png'} <= set(archive.namelist())

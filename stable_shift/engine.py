@@ -1,4 +1,4 @@
-"""Stable Shift v2.9 — non-generative image restoration.
+"""Stable Shift v2.10 — non-generative image restoration.
 
 The reference supplies palette information only in Restore Quality. Structural analysis and optional V2 surface cleanup use the edited/denoised image. No Forge hooks.
 """
@@ -29,6 +29,7 @@ class Options:
     color_match: bool=True
     color_method: str='Classic'
     antialias_strength: float=0.0
+    stroke_strength: float=0.0
     # keep user changes in Preserve Edit as well
     edit_sensitivity: float=23.0
 
@@ -333,11 +334,13 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     from .stage_maps import stage_diagnostics
     from .surface_normalization import normalize_surfaces
     from .antialias import antialias,validate_strength
+    from .stroke_cleanup import clean_strokes,validate_strength as validate_stroke
     from .global_color import METHODS
     import math
     if opts.color_method not in METHODS:
         raise ValueError('Unknown color method: '+str(opts.color_method))
     validate_strength(opts.antialias_strength)
+    validate_stroke(opts.stroke_strength)
     if opts.auto_strength and denoised_candidate is not None:
         raise ValueError('Automatic strength requires a backend run at its estimated settings; a manual cached candidate cannot be reused.')
     if not math.isfinite(opts.blotch_strength) or not 0 <= opts.blotch_strength <= 100:
@@ -417,16 +420,20 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     rgb,color_report=correct_palette(clean,local_rgb,rgb,opts)
     colored=perf_counter()
     palette_rgb=rgb
+    rgb,stroke_maps,stroke_report=clean_strokes(rgb,opts.stroke_strength,source_core,diagnostics,progress)
+    maps.update(stroke_maps)
+    stroked=perf_counter()
+    stroke_rgb=rgb
     if progress and opts.antialias_strength>0:progress('Optional edge antialiasing')
     rgb=antialias(rgb,opts.antialias_strength)
     finished=perf_counter()
     if diagnostics:
-        maps.update(stage_diagnostics(original,denoised_rgb,cleanup_rgb,rgb,colored=palette_rgb))
+        maps.update(stage_diagnostics(original,denoised_rgb,cleanup_rgb,rgb,colored=palette_rgb,stroked=stroke_rgb))
     diagnostics_finished=perf_counter()
-    maps['report']={'version':'2.9','backend':opts.method,'resolution':list(edited.size),
+    maps['report']={'version':'2.10','backend':opts.method,'resolution':list(edited.size),
         'source_analysis_seconds':analyzed-start,'denoise_seconds':denoised-analyzed,
         'cleanup_seconds':cleaned-denoised,'color_seconds':colored-cleaned,
-        'antialias_seconds':finished-colored,
+        'stroke_seconds':stroked-colored,'antialias_seconds':finished-stroked,
         'diagnostics_seconds':diagnostics_finished-finished,'total_seconds':diagnostics_finished-start,
         'source_protected_pixels_percent':0. if source_core is None else float(100*np.mean(source_core)),
         'faint_continuity':opts.faint_continuity,
@@ -436,7 +443,8 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
         'cleanup_strength':opts.cleanup,'color_match':opts.color_match,'options':asdict(opts),
         'region_cleanup':region_report,'broad_normalization':blotch_report,
         'color_correction':color_report,
+        'stroke_cleanup':stroke_report,
         'palette_note':'Fitted to local-cleanup baseline; not refitted after broad correction. Classic retains the V2.8 path.',
-        'antialias_note':'Optional final edge filtering; source-core RGB protection applies before color/AA.',
+        'antialias_note':'Optional final edge filtering; source-core RGB protection applies before color/strokes/AA.',
         'difference_note':'Total change includes palette correction; it is not a noise map.'}
     return Image.fromarray(rgb),maps

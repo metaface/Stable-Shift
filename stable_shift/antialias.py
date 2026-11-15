@@ -69,7 +69,8 @@ def refinish_antialias(pre_antialias, maps, strength):
     report['diagnostics_seconds'] = finished-filtered
     report['total_seconds'] = upstream+finished-started
     report['antialias_preview_seconds'] = finished-started
-    report['timing_note'] = 'Total combines original upstream timings and latest AA/diagnostics timings. AA preview reruns no denoising or color fitting.'
+    report['timing_note'] = 'Total combines original upstream timings and latest AA/diagnostics timings. AA preview reruns no denoising, color fitting or stroke cleanup.'
+    report.pop('finishing_preview_seconds', None)
     report['options']['antialias_strength'] = strength
     report['effective_options']['antialias_strength'] = strength
     updated['report'] = report
