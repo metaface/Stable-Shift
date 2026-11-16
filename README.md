@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.15** adds live line-preservation strength to the preferred quarter-to-half-to-full pyramid with V2.14 border cleanup. Prepare once, then adjust lines without repeating denoising, reconstruction or color fitting. No new dependencies.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.16** replaces the live preview's darkening/widening control with fitted smooth strokes. It regularizes their centers and measured widths, then rebuilds antialiased coverage using the existing ink colors. Prepare once; the slider still updates from cached pixels. No new dependencies.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -10,21 +10,21 @@ For a Git checkout, close the app and pull the branch you are testing with Git B
 
 For a fresh ZIP installation, extract into a new folder and use the Start launcher. It installs base requirements; optional CPU/GPU BM3D can be installed with the app buttons. For older installations updated by copying a ZIP over existing files, see [cleanup notes](docs/CLEANUP.md). `python app.py` remains supported.
 
-## Live line-preservation test
+## Live smooth-line test
 
-Load your usual pair/settings and choose **Prepare live pyramid**. This does the native, quarter and half processing once. Then drag **Line preservation %** or type a value:
+Load your pair/settings and choose **Prepare live pyramid**. Then drag **Line reconstruction %** or type a value:
 
-- **0%**: exactly the V2.14 cleaned-border result.
-- **100%** (initial value): restore darker supported strokes from the edited source.
-- **200%**: increase coverage toward nearby observed ink; this can thicken strokes.
+- **0%**: exact V2.14 cleaned-border result.
+- **100%** (initial value): full smooth fitted-stroke candidate.
+- **200%**: longer smoothing along strokes, rather than wider/darker ink.
 
-Values between the endpoints blend continuously from the same cached pixels. Try 0, 100 and 200 first. Use **Result zoom: 100% / 200% / 400%** and drag the result to inspect faint strokes. Zoom uses nearest-neighbor display so it does not conceal pixel noise. **Fit** shows the whole result. Saved images always retain their full resolution.
+Try **25, 50 and 100** first. These blend the base toward a genuinely different candidate; the old darkening-only gate is gone. Regularization can lighten rough protrusions and darken the smooth replacement path. Ink color comes from the cleaned native image, with source tracing locating the work area. Integrated stroke width is measured rather than deliberately expanded. A local under-ink paint estimate supports signed coverage changes; it is not pasted across whole surfaces.
 
-The lighter surrounding paint is not copied back with the old wide source mask. This is a test of dark-stroke preservation, not line recognition, antialiasing or invented gap filling. Source ink can itself contain grid damage. High settings may make that damage more visible or thicken small details. It does not recover every lost bright detail or shading boundary.
+Use **Result zoom: 100% / 200% / 400%** and drag the result to pan. Zoom uses nearest-neighbor display so it does not conceal pixel noise. The fitted stroke itself has 4x4 subpixel coverage. Saved images retain full resolution.
 
-**Save PNG + timings** records the displayed strength and frozen upstream settings, even if controls were edited afterward. **Save live test** exports the 0% baseline, displayed selection, 200% view, full inputs and settings; a ZIP is created when they fit within 30 MiB. **Save maps** records actual signed line changes relative to the displayed cache's 0% base. No export reruns processing.
+**Save PNG + timings** records the displayed strength and frozen settings. **Save live test** exports the 0% baseline, displayed selection, 200% view, full inputs and settings, with a ZIP when they fit within 30 MiB. **Save maps** records the signed changes relative to the displayed cache's 0% base. No slider move or export reruns denoising.
 
-Other denoiser/color settings take effect only after **Prepare live pyramid** again. Stroke cleanup and AA are off in this test. Normal **Run / Preview** still uses V2.12 cleanup; earlier comparison buttons remain available. See [live-preview validation](docs/VALIDATION_V215.md).
+Other cleanup/color settings require **Prepare live pyramid** again. The normal Run and earlier comparison buttons remain available. This is a local geometric model: intersections, sharp corners and already-missing strokes can remain imperfect, and 200% can round small details. See [V2.16 validation](docs/VALIDATION_V216.md).
 
 ## Compare line borders on the preferred pyramid
 

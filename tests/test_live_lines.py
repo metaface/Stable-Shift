@@ -2,68 +2,130 @@ import json
 import numpy as np
 import pytest
 from PIL import Image
+from stable_shift.line_borders import LUMA
+from stable_shift.line_reconstruction import reconstruct_lines
+from stable_shift.live_lines import LinePreview, result_view, save_line_test, validate_strength
 
-from stable_shift.live_lines import (LinePreview, LUMA, recovery_endpoints,
-    result_view, save_line_test, validate_strength)
+
+PAINT = np.array([155, 175, 195])
+INK = np.array([40, 60, 80])
 
 
 def scene():
-    source = np.full((80, 112, 3), (130, 155, 180), np.uint8)
-    source[:, 48:50] = (36, 60, 85)  # colored ink, not black
-    source[:, 47] = source[:, 50] = (95, 120, 145)
+    h, w = 120, 110
+    source = np.full((h, w, 3), PAINT, np.uint8)
+    rng = np.random.default_rng(10)
+    for y in range(h):
+        x = 50+rng.integers(-1, 2)
+        source[y, x-1:x+2] = INK
+        if y % 7 == 0:
+            source[y, x-1:x+2] += np.array([12, 25, 8], np.uint8)
     core = np.zeros(source.shape[:2], bool)
-    core[:, 45:53] = True
-    base = np.full_like(source, (130, 155, 180))
-    base[:, 48:50] = (68, 90, 112)  # a faded stroke after reconstruction
-    return base, source, core
+    core[:, 44:58] = True
+    return source.copy(), source, core
 
 
-def test_live_recovers_actual_colored_ink_and_leaves_lighter_fringe():
+def metrics(image):
+    alpha = np.clip(np.mean((PAINT-image)/(PAINT-INK), axis=2), 0, 1)
+    mass = alpha.sum(axis=1)
+    center = (alpha*np.arange(image.shape[1])).sum(axis=1)/np.maximum(1e-5, mass)
+    return float(np.mean(mass[12:-12])), float(np.std(center[12:-12]))
+
+
+def test_reconstruction_smooths_geometry_without_widening_and_uses_existing_color():
     base, source, core = scene()
-    source[:, 46] = (155, 185, 200)
-    native, strong, support = recovery_endpoints(base, source, core)
-    assert support[30, 48]
-    np.testing.assert_array_equal(native[30, 48], source[30, 48])
-    np.testing.assert_array_equal(native[:, 46], base[:, 46])
-    np.testing.assert_array_equal(strong[:, 46], base[:, 46])
-    assert np.all(strong[30, 47] >= (36, 60, 85))
-    assert np.any(strong != native)
-    np.testing.assert_array_equal(native[~core], base[~core])
-    np.testing.assert_array_equal(strong[~core], base[~core])
+    regular, strong, support, report = reconstruct_lines(base, core)
+    original_width, original_jitter = metrics(base)
+    for image in (regular, strong):
+        width, jitter = metrics(image)
+        assert jitter < original_jitter*.55  # actual center geometry, not only darker pixels
+        assert original_width*.85 < width < original_width*1.10
+        assert np.any(image.astype(int) > base.astype(int))  # remove old protrusions
+        assert np.any(image.astype(int) < base.astype(int))  # fill the smoothed path
+        assert np.all(image.min(axis=(0, 1)) >= INK-1)  # colored ink, no forced black
+        np.testing.assert_array_equal(image[~support], base[~support])
+    assert report['supersampling'] == 4
 
 
-def test_no_recovery_on_shading_step_or_isolated_noise_dot():
-    source = np.full((80, 112, 3), 160, np.uint8)
-    source[:, :56] = 80
+def test_stitch_gaps_and_nearby_parallel_lines_do_not_join():
+    source = np.full((96, 100, 3), PAINT, np.uint8)
+    for y in (8, 30, 52, 74):
+        source[y:y+10, 40:42] = INK
+        source[y:y+10, 47:49] = INK
+    core = np.zeros(source.shape[:2], bool)
+    core[:, 37:52] = True
+    regular, strong, _, _ = reconstruct_lines(source, core)
+    for image in (regular, strong):
+        for y in (22, 44, 66):
+            np.testing.assert_array_equal(image[y, 38:51], source[y, 38:51])
+        for y in (13, 35, 57, 79):
+            assert image[y, 40:42].mean() < 130
+            assert image[y, 47:49].mean() < 130
+            np.testing.assert_array_equal(image[y, 44], PAINT)
+
+
+def test_shade_step_smoke_edge_and_isolated_dot_are_not_rebuilt_as_lines():
+    source = np.full((80, 112, 3), 100, np.uint8)
+    source[:, :56] = 160
     source[30, 80] = 25
-    base = np.full_like(source, 180)
-    native, strong, _ = recovery_endpoints(base, source, np.ones(source.shape[:2], bool))
-    np.testing.assert_array_equal(native, base)
-    np.testing.assert_array_equal(strong, base)
+    regular, strong, _, _ = reconstruct_lines(source, np.ones(source.shape[:2], bool))
+    np.testing.assert_array_equal(regular, source)
+    np.testing.assert_array_equal(strong, source)
+
+
+@pytest.mark.parametrize('width', [1, 2, 3])
+@pytest.mark.parametrize('gap', [2, 3])
+def test_tiny_stitch_gaps_remain_open_at_both_powers(width, gap):
+    image = np.full((100, 90, 3), PAINT, np.uint8)
+    for y in range(7, 90, 6+gap):
+        image[y:y+6, 44:44+width] = INK
+    core = np.zeros(image.shape[:2], bool)
+    core[:, 40:53] = True
+    regular, strong, _, _ = reconstruct_lines(image, core)
+    for output in (regular, strong):
+        for y in range(7, 80, 6+gap):
+            assert output[y+3, 44:44+width].mean() < 110
+            np.testing.assert_array_equal(output[y+6+gap//2, 44:44+width], image[y+6+gap//2, 44:44+width])
+
+
+@pytest.mark.parametrize('shape', ['circle', 'smoke', 'wave'])
+def test_curved_bright_smoke_does_not_acquire_new_darker_ink(shape):
+    import cv2
+    image = np.full((170, 160, 3), 75, np.uint8)
+    if shape == 'circle':
+        cv2.circle(image, (80, 85), 50, (125, 125, 125), -1)
+    else:
+        amplitude, period, width = (22, 19, 19) if shape == 'smoke' else (35, 14, 11)
+        points = np.int32([[80+amplitude*np.sin(y/period), y] for y in range(15, 155)])
+        cv2.polylines(image, [points], False, (125, 125, 125), width, cv2.LINE_AA)
+    regular, strong, _, _ = reconstruct_lines(image, np.ones(image.shape[:2], bool))
+    for output in (regular, strong):
+        assert output.min() >= 75
+        assert output.max() <= 126
+        if shape != 'wave':
+            np.testing.assert_array_equal(output, image)
 
 
 def preview():
     base, source, core = scene()
-    native, strong, support = recovery_endpoints(base, source, core)
-    return LinePreview(base, native, strong, support, {'requested_options': {'noise': 70}})
+    regular, strong, support, report = reconstruct_lines(base, core)
+    return LinePreview(base, regular, strong, support,
+        {'requested_options': {'noise': 70}, 'line_reconstruction': report})
 
 
-def test_cached_render_is_non_cumulative_reversible_and_monotonic(monkeypatch):
+def test_cached_render_is_visible_below_100_non_cumulative_and_reversible(monkeypatch):
     p = preview()
     def forbidden(*args, **kwargs):
         pytest.fail('Slider called preparation/analysis')
-    monkeypatch.setattr('stable_shift.live_lines.recovery_endpoints', forbidden)
+    monkeypatch.setattr('stable_shift.live_lines.reconstruct_lines', forbidden)
     monkeypatch.setattr('stable_shift.engine.restore_quality', forbidden)
     monkeypatch.setattr('stable_shift.reconstruction.pyramid_field', forbidden)
     monkeypatch.setattr('stable_shift.global_color.fit_global_color', forbidden)
     base, _ = p.render(0)
     np.testing.assert_array_equal(base, p.base)
-    previous = np.asarray(base).astype(float)@LUMA
     for strength in (25, 50, 100, 150, 200):
         image, report = p.render(strength)
-        light = np.asarray(image).astype(float)@LUMA
-        assert np.all(light <= previous+1)
-        previous = light
+        assert np.count_nonzero(np.any(np.asarray(image) != p.base, axis=2)) > 50
         assert report['line_preservation']['strength'] == strength
         assert report['line_preservation']['upstream_reprocessed'] is False
     first = np.asarray(p.render(73)[0]).copy()
@@ -121,7 +183,7 @@ def test_preparation_runs_three_scales_and_slider_never_repeats_them(monkeypatch
     monkeypatch.setattr(comparison, 'restore_quality', restore)
     opts = Options(color_match=False, antialias_strength=50, stroke_strength=100)
     p = prepare_line_preview(source, source, opts)
-    assert [size for size, _ in calls] == [(112, 80), (28, 20), (56, 40)]
+    assert [size for size, _ in calls] == [(110, 120), (28, 30), (55, 60)]
     assert all(o['antialias_strength'] == o['stroke_strength'] == 0 for _, o in calls)
     for value in (0, 100, 200, 80, 100):
         p.render(value)

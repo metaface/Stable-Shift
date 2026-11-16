@@ -1,3 +1,3 @@
 """Stable Shift image restoration and desktop application."""
 
-__version__ = "2.15"
+__version__ = "2.16"
