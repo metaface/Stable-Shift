@@ -24,6 +24,116 @@ def close_app(root):
     root.destroy()
 
 
+def test_live_line_slider_prepares_once_uses_latest_value_and_saves_applied_setting(tmp_path, monkeypatch):
+    import json
+    import numpy as np
+    from stable_shift.app import filedialog, messagebox
+    from stable_shift import live_lines
+    from tests.test_live_lines import preview, scene
+    root, app = make_app()
+    try:
+        for method in ('showerror', 'showwarning'):
+            monkeypatch.setattr(messagebox, method, lambda *args: pytest.fail(str(args)))
+        path = tmp_path/'source.png'
+        Image.fromarray(scene()[1]).save(path)
+        app.set_image('edited', path)
+        app.palette.set(False)
+        calls = []
+        def prepare(*args):
+            calls.append(args)
+            return preview()
+        monkeypatch.setattr(live_lines, 'prepare_line_preview', prepare)
+        app.prepare_live_lines()
+        app.line_strength.set(145)
+        deadline = time.monotonic()+10
+        while app.busy and time.monotonic() < deadline:
+            root.update()
+            time.sleep(.01)
+        assert not app.busy and len(calls) == 1
+        assert app.maps['report']['line_preservation']['strength'] == 145
+        for value in (0, 100, 200, 100):
+            app.line_strength.set(value)
+            app.render_live_lines()
+            np.testing.assert_array_equal(app.result, app.line_preview.render(value)[0])
+        assert len(calls) == 1
+        app.result_zoom.set('200%')
+        app.redraw()
+        assert app.photos['result'].width() <= app.canvases['result'].winfo_width()+2
+        # Widget edits pending debounce must not mislabel the displayed image.
+        app.line_strength.set(175)
+        out = tmp_path/'saved.png'
+        monkeypatch.setattr(filedialog, 'asksaveasfilename', lambda **kwargs: str(out))
+        app.save()
+        saved = json.loads(out.with_suffix('.settings.json').read_text())
+        assert saved['line_preservation']['strength'] == 100
+        assert Image.open(out).size == app.images['edited'].size
+        app.set_image('edited', path)
+        assert app.line_preview is None and not app._live_result
+        app.line_strength.set(200)
+        app.render_live_lines()
+        assert app.result is None
+    finally:
+        close_app(root)
+
+
+def test_stale_live_worker_cannot_replace_result_or_clear_busy_flag(monkeypatch):
+    from tests.test_live_lines import preview
+    root, app = make_app()
+    try:
+        app.busy = True
+        retained = Image.new('RGB', (7, 9), 'red')
+        app.result = retained
+        app._line_generation = 4
+        app.queue.put(('live_lines_ready', (3, preview())))
+        app.poll()
+        assert app.busy and app.result is retained and app.line_preview is None
+        app.queue.put(('live_lines_error', (3, 'old error', 'old traceback')))
+        app.poll()
+        assert app.busy and app.result is retained
+    finally:
+        close_app(root)
+
+
+def test_live_drag_keeps_first_timer_and_exports_displayed_cache_when_new_value_invalid(tmp_path, monkeypatch):
+    import numpy as np
+    from stable_shift.app import filedialog
+    from stable_shift.live_lines import LinePreview
+    from tests.test_live_lines import preview
+    root, app = make_app()
+    try:
+        old = preview()
+        app.line_preview = old
+        app.line_strength.set(80)
+        first_timer = app._line_job
+        for value in (90, 100, 120):
+            app.line_strength.set(value)
+            assert app._line_job == first_timer  # continuous motion cannot starve rendering
+        app.render_live_lines()
+        assert app.maps['report']['line_preservation']['strength'] == 120
+        applied = np.asarray(app.result).copy()
+        app.line_strength.set('')  # user is partway through typing during preparation
+        new_base = np.full_like(old.base, 245)
+        new = LinePreview(new_base, new_base, new_base, old.support, {})
+        app.busy = True
+        app.queue.put(('live_lines_ready', (app._line_generation, new)))
+        app.poll()
+        assert app.line_preview is new and app._displayed_line_preview is old
+        np.testing.assert_array_equal(app.result, applied)
+        captured = []
+        monkeypatch.setattr(filedialog, 'askdirectory', lambda **kwargs: str(tmp_path))
+        monkeypatch.setattr('stable_shift.stage_maps.save_diagnostics', lambda maps, path: captured.append(maps) or 2)
+        app.save_maps()
+        np.testing.assert_array_equal(captured[0]['line_preservation_signed_rgb'],
+            applied.astype(np.int16)-old.base.astype(np.int16))
+        assert captured[0]['report']['line_preservation']['strength'] == 120
+        app.line_strength.set(100)
+        app.render_live_lines()
+        assert app._displayed_line_preview is new
+        np.testing.assert_array_equal(app.result, new_base)
+    finally:
+        close_app(root)
+
+
 def native_drop(root, app, key, path):
     # Exercise the actual registered Tcl callback and its native DnD argument
     # conversion, rather than bypassing the binding with a direct Python call.

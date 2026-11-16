@@ -39,9 +39,9 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.14 — Line Border Comparison')
-        root.geometry('1400x940')
-        root.minsize(1040, 760)
+        root.title('Stable Shift V2.15 — Live Line Preservation')
+        root.geometry('1400x980')
+        root.minsize(1040, 820)
         self.images = {'clean': None, 'edited': None}
         self.paths = {}
         self.result = None
@@ -53,6 +53,16 @@ class App:
         self.started = None
         self.phase = ''
         self._redraw_job = None
+        self.line_preview = None
+        self._displayed_line_preview = None
+        self._line_job = None
+        self._line_generation = 0
+        self._live_result = False
+        self.line_strength = tk.DoubleVar(value=100)
+        self.result_zoom = tk.StringVar(value='Fit')
+        self.view_center = (.5, .5)
+        self._view_box = None
+        self._drag_start = None
         self.dnd_available = dnd_available
         self.dnd_error = dnd_error
         self.mode = tk.StringVar(value='Restore Quality')
@@ -155,6 +165,20 @@ class App:
         ttk.Button(reconstruction, text='Compare line borders', command=self.compare_line_borders).pack(side='left', padx=7)
         ttk.Label(reconstruction, text='Experimental comparisons. Normal Run retains V2.12 cleanup.').pack(side='left', padx=5)
         ttk.Label(strokes, text='100 applies the full candidate.').pack(side='left', padx=7)
+        live = ttk.Frame(controls)
+        live.pack(fill='x', pady=(5, 3))
+        ttk.Button(live, text='Prepare live pyramid', command=self.prepare_live_lines).pack(side='left', padx=7)
+        ttk.Label(live, text='Line preservation %:').pack(side='left', padx=5)
+        ttk.Scale(live, variable=self.line_strength, from_=0, to=200).pack(side='left', fill='x', expand=True, padx=5)
+        ttk.Spinbox(live, from_=0, to=200, increment=5, width=5, textvariable=self.line_strength).pack(side='left', padx=5)
+        ttk.Button(live, text='Save live test', command=self.save_live_lines).pack(side='left', padx=7)
+        ttk.Label(live, text='Result zoom:').pack(side='left')
+        zoom = ttk.Combobox(live, textvariable=self.result_zoom, state='readonly', width=6,
+                            values=['Fit', '100%', '200%', '400%'])
+        zoom.pack(side='left', padx=5)
+        zoom.bind('<<ComboboxSelected>>', self.schedule_redraw)
+        ttk.Label(controls, text='Prepare once; then drag strength or type a value. 0 = V2.14, 100 = source ink, 200 = stronger ink coverage. Drag the zoomed result to pan.').pack(anchor='w')
+        self.line_strength.trace_add('write', self.schedule_line_preview)
         self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
         ag = ttk.Frame(self.advanced)
         ag.pack(fill='x')
@@ -198,6 +222,9 @@ class App:
             canvas.bind('<Double-Button-1>', lambda e, k=key: self.open_file(k) if k != 'result' else None)
             self.canvases[key] = canvas
             self.preview_frames[key] = frame
+            if key == 'result':
+                canvas.bind('<ButtonPress-1>', self.start_result_pan)
+                canvas.bind('<B1-Motion>', self.pan_result)
             if dnd_available and key != 'result':
                 for widget in (canvas, frame, self.open_buttons[key]):
                     widget.drop_target_register(DND_FILES)
@@ -257,9 +284,8 @@ class App:
         self.schedule_redraw()
 
     def schedule_redraw(self, event=None):
-        if self._redraw_job is not None:
-            self.root.after_cancel(self._redraw_job)
-        self._redraw_job = self.root.after(80, self.redraw)
+        if self._redraw_job is None:
+            self._redraw_job = self.root.after(30, self.redraw)
 
     def redraw(self):
         self._redraw_job = None
@@ -272,7 +298,12 @@ class App:
                 canvas.create_text(width / 2, height / 2, text=label, fill=self._colors[1], justify='center')
                 self.photos.pop(key, None)
                 continue
-            thumb = ImageOps.contain(image, (max(1, width - 8), max(1, height - 8)), Image.Resampling.LANCZOS)
+            if key == 'result':
+                from .live_lines import result_view
+                thumb, self._view_box = result_view(image, (width-8, height-8),
+                                                    self.result_zoom.get(), self.view_center)
+            else:
+                thumb = ImageOps.contain(image, (max(1, width - 8), max(1, height - 8)), Image.Resampling.LANCZOS)
             self.photos[key] = ImageTk.PhotoImage(thumb)
             canvas.create_image(width / 2, height / 2, image=self.photos[key])
 
@@ -296,6 +327,8 @@ class App:
             messagebox.showerror('Open image', str(exc))
             return False
         self.images[key] = image
+        self.invalidate_line_preview()
+        self.view_center = (.5, .5)
         self.paths[key] = str(path)
         self.result = None
         self.pre_antialias = None
@@ -363,6 +396,7 @@ class App:
             messagebox.showwarning('Inputs/settings', str(exc))
             return
         mode = self.mode.get()
+        self.invalidate_line_preview()
         self.begin('Preparing restoration')
         def worker():
             try:
@@ -506,6 +540,103 @@ class App:
                 self.queue.put(('error', (str(exc), traceback.format_exc())))
         Thread(target=worker, daemon=True).start()
 
+    def invalidate_line_preview(self):
+        self._line_generation += 1
+        self.line_preview = None
+        self._displayed_line_preview = None
+        self._live_result = False
+        if self._line_job is not None:
+            self.root.after_cancel(self._line_job)
+            self._line_job = None
+
+    def prepare_live_lines(self):
+        if self.busy:
+            return
+        if self.mode.get() != 'Restore Quality':
+            messagebox.showinfo('Live lines', 'Live pyramid is for Restore Quality.')
+            return
+        try:
+            clean, edited, opts = self.snapshot()
+            from .live_lines import validate_strength
+            validate_strength(self.line_strength.get())
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Inputs/settings', str(exc))
+            return
+        # Retain a successful older preview if preparation fails. Only the
+        # matching successful worker may install a new cache/result.
+        self._line_generation += 1
+        generation = self._line_generation
+        self.begin('Preparing live pyramid once; line slider becomes live when ready')
+        def worker():
+            try:
+                from .live_lines import prepare_line_preview
+                preview = prepare_line_preview(clean, edited, opts, self.progress)
+                self.queue.put(('live_lines_ready', (generation, preview)))
+            except Exception as exc:
+                self.queue.put(('live_lines_error', (generation, str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
+    def schedule_line_preview(self, *args):
+        # Throttle, rather than restarting a debounce timer on every motion:
+        # the preview must keep updating while the user drags continuously.
+        if self._line_job is None:
+            self._line_job = self.root.after(40, self.render_live_lines)
+
+    def render_live_lines(self):
+        self._line_job = None
+        if self.busy or self.line_preview is None:
+            return
+        try:
+            out, report = self.line_preview.render(self.line_strength.get())
+        except (ValueError, tk.TclError):
+            self.status.set('Line preservation needs a number from 0 to 200%. The previous result is retained.')
+            return
+        self.result = out
+        self._displayed_line_preview = self.line_preview
+        self.maps = {'report': report}
+        self.pre_antialias = self.post_color = None
+        self._live_result = True
+        line = report['line_preservation']
+        self.result_info.set(f'Live pyramid | Line preservation {line["strength"]:.1f}% | '
+            f'Changed from V2.14: {line["changed_pixels_percent"]:.2f}% | '
+            f'Blend: {line["render_seconds"]*1000:.0f} ms | Drag the zoomed result to pan')
+        self.status.set('Live strength updated from cache. Denoising, pyramid and colors were not rerun. Other settings require Prepare live pyramid again.')
+        self.schedule_redraw()
+
+    def start_result_pan(self, event):
+        if self.result is None or self.result_zoom.get() == 'Fit' or self._view_box is None:
+            return
+        left, top, right, bottom = self._view_box
+        center = ((left+right)/(2*self.result.width), (top+bottom)/(2*self.result.height))
+        self._drag_start = (event.x, event.y, center)
+
+    def pan_result(self, event):
+        if self._drag_start is None or self.result is None or self.result_zoom.get() == 'Fit':
+            return
+        x, y, center = self._drag_start
+        scale = float(self.result_zoom.get().removesuffix('%'))/100
+        self.view_center = (max(0, min(1, center[0]-(event.x-x)/(scale*self.result.width))),
+                            max(0, min(1, center[1]-(event.y-y)/(scale*self.result.height))))
+        self.schedule_redraw()
+
+    def save_live_lines(self):
+        if self.busy or self.line_preview is None or not self._live_result:
+            messagebox.showinfo('Save live test', 'Prepare a live pyramid first.')
+            return
+        # Save the applied strength, even when a newer widget value is pending.
+        strength = self.maps['report']['line_preservation']['strength']
+        parent = filedialog.askdirectory(title='Save cached line-preservation test')
+        if not parent:
+            return
+        directory = Path(parent)/datetime.now().strftime('live_line_test_v215_%Y%m%d_%H%M%S_%f')
+        try:
+            from .live_lines import save_line_test
+            archive = save_line_test(self._displayed_line_preview, strength, directory,
+                                     self.images['edited'], self.images['clean'])
+            self.status.set('Live line test saved: '+str(archive or directory))
+        except Exception as exc:
+            messagebox.showerror('Save live test', str(exc))
+
     def preview_antialias(self):
         if self.busy:
             return
@@ -615,6 +746,21 @@ class App:
                 if kind == 'progress':
                     self.phase = data
                     continue
+                if kind in ('live_lines_ready', 'live_lines_error'):
+                    if data[0] != self._line_generation:
+                        continue
+                    self.busy = False
+                    self.started = None
+                    if kind == 'live_lines_ready':
+                        self.line_preview = data[1]
+                        if self._line_job is not None:
+                            self.root.after_cancel(self._line_job)
+                            self._line_job = None
+                        self.render_live_lines()
+                    else:
+                        self.status.set('Live preparation failed. The previous result is retained.')
+                        messagebox.showerror('Live lines', data[1])
+                    continue
                 self.busy = False
                 self.started = None
                 if kind == 'result':
@@ -713,7 +859,10 @@ class App:
             return
         try:
             from .stage_maps import save_diagnostics
-            count = save_diagnostics(self.maps, directory)
+            maps = self.maps
+            if self._live_result and self.line_preview is not None:
+                maps = self._displayed_line_preview.diagnostics(self.result, self.maps['report'])
+            count = save_diagnostics(maps, directory)
             self.status.set(f'Saved {count} map previews, signed raw arrays and MAP_LEGEND.')
         except Exception as exc:
             messagebox.showerror('Save maps', str(exc))

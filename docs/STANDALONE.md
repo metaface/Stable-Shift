@@ -1,4 +1,16 @@
-# Stable Shift V2.14 — standalone guide
+# Stable Shift V2.15 — standalone guide
+
+## Live pyramid and line preservation
+
+Choose **Prepare live pyramid** with your normal pair and cleanup settings. Native, quarter and half processing run once, followed by the accepted V2.14 border cleanup. The result appears in the app. **Line preservation %** then updates while dragging, using fixed post-color RGB endpoints and no new denoising, reconstruction, line analysis or color fitting.
+
+At 0 the result is exactly V2.14. At 100 it restores darker, supported source stroke pixels. At 200 it increases coverage toward an actual nearby ink color. The default is 100 and intermediate strengths interpolate the cached endpoints. The old oversized source band is not restored. Two-sided darker profiles and short directional support distinguish candidate ink from ordinary one-sided shade boundaries; these measurements do not recognize all meaningful lines. Stronger values can thicken strokes and reveal noise already in source ink.
+
+Use **Result zoom** at 100%, 200% or 400% and drag the result to pan. Zoomed display uses nearest-neighbor sampling, with no smoothing that could disguise source grid artifacts. **Fit** displays the whole image. Saving always writes the complete native-resolution result.
+
+**Save PNG + timings** saves the displayed strength and actual frozen preparation options. **Save live test** writes `01_v214_baseline.png`, `02_selected.png`, `03_preservation_200.png`, full inputs and settings. It adds `share_live_line_test.zip` when the required files fit within 30 MiB; otherwise full files remain available. **Save maps** exports `line_support` (measured application support), `line_preservation_signed_rgb` (displayed minus 0% RGB), and `line_preservation_change` (mean absolute RGB change / 16). These are not the normal engine's denoise/cleanup stage maps.
+
+The slider range and cache are specific to this experiment. Changing the inputs clears it; normal Run also clears it. Other cleanup or color settings need **Prepare live pyramid** again. The same Robust global transform is frozen across every strength, or source colors if the fit is rejected. Finishing strokes/AA are off. The color-method dropdown still belongs to normal Run. See [V2.15 validation](VALIDATION_V215.md).
 
 ## Line borders on the preferred pyramid
 

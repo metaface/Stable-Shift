@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.14** tests cleanup of noisy/light paint fringes next to ink in the preferred quarter-to-half-to-full reconstruction. Normal Run retains the accepted V2.12 processing; the previous reconstruction comparison is retained. No new dependencies.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.15** adds live line-preservation strength to the preferred quarter-to-half-to-full pyramid with V2.14 border cleanup. Prepare once, then adjust lines without repeating denoising, reconstruction or color fitting. No new dependencies.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -9,6 +9,22 @@ Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited 
 For a Git checkout, close the app and pull the branch you are testing with Git Bash. Git handles tracked file removals; no cleanup script is needed. Keep using **START_Stable_Shift.bat**. The existing `.venv` is reused; this version adds no dependencies.
 
 For a fresh ZIP installation, extract into a new folder and use the Start launcher. It installs base requirements; optional CPU/GPU BM3D can be installed with the app buttons. For older installations updated by copying a ZIP over existing files, see [cleanup notes](docs/CLEANUP.md). `python app.py` remains supported.
+
+## Live line-preservation test
+
+Load your usual pair/settings and choose **Prepare live pyramid**. This does the native, quarter and half processing once. Then drag **Line preservation %** or type a value:
+
+- **0%**: exactly the V2.14 cleaned-border result.
+- **100%** (initial value): restore darker supported strokes from the edited source.
+- **200%**: increase coverage toward nearby observed ink; this can thicken strokes.
+
+Values between the endpoints blend continuously from the same cached pixels. Try 0, 100 and 200 first. Use **Result zoom: 100% / 200% / 400%** and drag the result to inspect faint strokes. Zoom uses nearest-neighbor display so it does not conceal pixel noise. **Fit** shows the whole result. Saved images always retain their full resolution.
+
+The lighter surrounding paint is not copied back with the old wide source mask. This is a test of dark-stroke preservation, not line recognition, antialiasing or invented gap filling. Source ink can itself contain grid damage. High settings may make that damage more visible or thicken small details. It does not recover every lost bright detail or shading boundary.
+
+**Save PNG + timings** records the displayed strength and frozen upstream settings, even if controls were edited afterward. **Save live test** exports the 0% baseline, displayed selection, 200% view, full inputs and settings; a ZIP is created when they fit within 30 MiB. **Save maps** records actual signed line changes relative to the displayed cache's 0% base. No export reruns processing.
+
+Other denoiser/color settings take effect only after **Prepare live pyramid** again. Stroke cleanup and AA are off in this test. Normal **Run / Preview** still uses V2.12 cleanup; earlier comparison buttons remain available. See [live-preview validation](docs/VALIDATION_V215.md).
 
 ## Compare line borders on the preferred pyramid
 
