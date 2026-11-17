@@ -39,7 +39,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.16 — Live Smooth Lines')
+        root.title('Stable Shift V2.17 — Smooth Lines and Surface Speckles')
         root.geometry('1400x980')
         root.minsize(1040, 820)
         self.images = {'clean': None, 'edited': None}
@@ -177,7 +177,7 @@ class App:
                             values=['Fit', '100%', '200%', '400%'])
         zoom.pack(side='left', padx=5)
         zoom.bind('<<ComboboxSelected>>', self.schedule_redraw)
-        ttk.Label(controls, text='Prepare once; then drag strength or type a value. 0 = V2.14, 100 = smooth fitted strokes, 200 = stronger smoothing. Drag the zoomed result to pan.').pack(anchor='w')
+        ttk.Label(controls, text='Prepare once; then drag strength. 0 = reconstruction off, 100 = smooth fitted strokes, 200 = stronger smoothing. Surface-speckle cleanup stays on.').pack(anchor='w')
         self.line_strength.trace_add('write', self.schedule_line_preview)
         self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
         ag = ttk.Frame(self.advanced)
@@ -598,7 +598,7 @@ class App:
         self._live_result = True
         line = report['line_preservation']
         self.result_info.set(f'Live pyramid | Line reconstruction {line["strength"]:.1f}% | '
-            f'Changed from V2.14: {line["changed_pixels_percent"]:.2f}% | '
+            f'Changed from cleaned 0% base: {line["changed_pixels_percent"]:.2f}% | '
             f'Blend: {line["render_seconds"]*1000:.0f} ms | Drag the zoomed result to pan')
         self.status.set('Live strength updated from cache. Denoising, pyramid and colors were not rerun. Other settings require Prepare live pyramid again.')
         self.schedule_redraw()
@@ -628,7 +628,7 @@ class App:
         parent = filedialog.askdirectory(title='Save cached line-preservation test')
         if not parent:
             return
-        directory = Path(parent)/datetime.now().strftime('live_line_test_v216_%Y%m%d_%H%M%S_%f')
+        directory = Path(parent)/datetime.now().strftime('live_line_test_v217_%Y%m%d_%H%M%S_%f')
         try:
             from .live_lines import save_line_test
             archive = save_line_test(self._displayed_line_preview, strength, directory,

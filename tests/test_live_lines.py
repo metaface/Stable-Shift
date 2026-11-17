@@ -190,3 +190,65 @@ def test_preparation_runs_three_scales_and_slider_never_repeats_them(monkeypatch
     assert len(calls) == 3
     assert p.report['requested_options']['antialias_strength'] == 50
     assert p.report['normal_run_unchanged']
+
+
+def test_preparation_cleans_all_final_color_endpoints_including_zero_once(monkeypatch, tmp_path):
+    from dataclasses import asdict
+    from stable_shift import reconstruction_comparison as comparison
+    from stable_shift import reconstruction, line_borders, live_lines, surface_speckles
+    from stable_shift.engine import Options
+    from stable_shift.global_color import GlobalColor
+    from tests.test_surface_speckles import scene as speckle_scene
+    raw = speckle_scene()
+    raw[30, 80] = [65, 75, 85]
+    core = np.ones(raw.shape[:2], bool)
+    options = Options(color_match=True)
+    def layers(*args, **kwargs):
+        return tmp_path, 0, raw.copy(), {'source_line_core': core, 'report': {'options': asdict(options)}}, raw.copy(), core, {'half': raw.copy(), 'quarter': raw.copy()}, {}
+    monkeypatch.setattr(comparison, '_prepare_layers', layers)
+    monkeypatch.setattr(reconstruction, 'pyramid_field', lambda full, half, quarter, **kwargs: (full, full, None))
+    monkeypatch.setattr(line_borders, 'clean_line_borders', lambda previous, *args, **kwargs: (previous.copy(), {}, {}))
+    def fitted(base, support):
+        regular, strong = base.copy(), base.copy()
+        regular[50, 80] = [60, 70, 80]
+        strong[70, 80] = [60, 70, 80]
+        return regular, strong, support, {'unchanged_fit': True}
+    monkeypatch.setattr(live_lines, 'reconstruct_lines', fitted)
+    transform = GlobalColor(np.eye(3)*.9, np.zeros(3), np.full(3, .02))
+    monkeypatch.setattr(comparison, '_shared_color', lambda *args: (transform, {'selected_method': 'Robust global'}))
+    calls = []
+    real_clean = surface_speckles.clean_surface_speckles
+    def clean(pixels, support):
+        calls.append(pixels.copy())
+        return real_clean(pixels, support)
+    monkeypatch.setattr(surface_speckles, 'clean_surface_speckles', clean)
+    image = Image.fromarray(raw)
+    state = live_lines.prepare_line_preview(image, image, options)
+    assert len(calls) == 3
+    np.testing.assert_array_equal(calls[0], transform.apply(raw))
+    np.testing.assert_array_equal(state.before_speckles, calls[0])
+    expected_paint = transform.apply(np.full_like(raw, [110, 125, 140]))[30, 80]
+    for strength, point in ((0, (30, 80)), (100, (50, 80)), (200, (70, 80))):
+        result, report = state.render(strength)
+        np.testing.assert_array_equal(np.asarray(result)[point], expected_paint)
+        assert report['line_preservation']['strength'] == strength
+        assert report['line_reconstruction']['unchanged_fit']
+    assert len(calls) == 3  # slider rendering never repeats even this small cleanup
+    assert all(report['surface_speckles'][key]['removed_pixels'] for key in ('zero', 'regular', 'strong'))
+
+
+def test_dirty_baseline_export_and_signed_stage_sum(tmp_path):
+    base, _, core = scene()
+    dirty = base.copy()
+    dirty[50, 56] = 30
+    state = LinePreview(base, base, base, core, {'version': '2.17'}, before_speckles=dirty)
+    archive = save_line_test(state, 0, tmp_path, Image.fromarray(dirty))
+    assert archive.exists()
+    np.testing.assert_array_equal(Image.open(tmp_path/'00_before_speckle_cleanup.png'), dirty)
+    np.testing.assert_array_equal(Image.open(tmp_path/'01_reconstruction_off.png'), base)
+    result, report = state.render(100)
+    maps = state.diagnostics(result, report)
+    np.testing.assert_array_equal(maps['surface_speckle_signed_rgb']+maps['line_preservation_signed_rgb'],
+        np.asarray(result).astype(np.int16)-dirty.astype(np.int16))
+    with pytest.raises(ValueError):
+        state.before_speckles[0, 0] = 0

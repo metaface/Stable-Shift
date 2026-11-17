@@ -1,6 +1,7 @@
 """Prepare once, then render line-preservation strength from fixed RGB endpoints.
 
-The zero endpoint is exactly the V2.14 pyramid/border result. Recovery uses
+The zero endpoint is the pyramid/border result with surface speckles cleaned.
+The original pre-cleanup base is retained for comparison. Recovery uses
 fitted stroke centers/widths and signed coverage changes, never reference
 geometry or a wide source copy-back. Slider rendering does no image analysis or cleanup.
 """
@@ -28,7 +29,7 @@ def validate_strength(value):
 
 class LinePreview:
     """Immutable post-color endpoints; sparse blends make strength reversible."""
-    def __init__(self, base, native, strong, support, report):
+    def __init__(self, base, native, strong, support, report, before_speckles=None):
         self.base = np.array(base, dtype=np.uint8, copy=True)
         native = np.asarray(native)
         strong = np.asarray(strong)
@@ -38,8 +39,11 @@ class LinePreview:
         self.values = tuple(a.reshape(-1, 3)[self.indices].copy()
                             for a in (self.base, native, strong))
         self.support = np.array(support, dtype=bool, copy=True)
+        self.before_speckles = self.base.copy() if before_speckles is None else np.array(before_speckles, dtype=np.uint8, copy=True)
+        if self.before_speckles.shape != self.base.shape:
+            raise ValueError('The pre-speckle baseline must match the preview dimensions.')
         self.report = deepcopy(report)
-        for a in (self.base, self.indices, self.support, *self.values):
+        for a in (self.base, self.before_speckles, self.indices, self.support, *self.values):
             a.flags.writeable = False
 
     def render(self, strength):
@@ -57,15 +61,18 @@ class LinePreview:
             'changed_pixels_percent': float(100*np.count_nonzero(
                 np.any(values != self.values[0], axis=1))/self.support.size),
             'render_seconds': perf_counter()-start,
-            'meaning': '0 = V2.14 clean borders; 100 = smooth fitted strokes; 200 = stronger geometry smoothing.',
+            'meaning': '0 = reconstruction off with surface-speckle cleanup; 100 = smooth fitted strokes; 200 = stronger geometry smoothing.',
             'upstream_reprocessed': False}
         return Image.fromarray(rgb), report
 
     def diagnostics(self, image, report):
         signed = np.asarray(image).astype(np.int16)-self.base.astype(np.int16)
+        speckles = self.base.astype(np.int16)-self.before_speckles.astype(np.int16)
         return {'line_support': self.support.astype(np.float32),
                 'line_preservation_signed_rgb': signed,
                 'line_preservation_change': np.mean(np.abs(signed), axis=2)/16,
+                'surface_speckle_signed_rgb': speckles,
+                'surface_speckle_change': np.mean(np.abs(speckles), axis=2)/16,
                 'report': deepcopy(report)}
 
 
@@ -93,17 +100,29 @@ def prepare_line_preview(reference, edited, options, progress=None):
         from .line_protection import trace_source_lines
         support = trace_source_lines(np.asarray(edited), structure_maps(edited),
                                      continue_faint=True)['source_line_core']
-    native, strong, support, reconstruction = reconstruct_lines(base, support > .5)
+    source_support = support > .5
+    native, strong, support, reconstruction = reconstruct_lines(base, source_support)
     transform, color = comparison._shared_color(reference, local, options)
     if transform is not None:
         base, native, strong = (transform.apply(a) for a in (base, native, strong))
-    report = {'version': '2.16', 'backend': 'Live pyramid line reconstruction',
+    # Clean each fixed endpoint in its final RGB colors. This directly limits
+    # the repair to lightening paint outliers, and leaves accepted fitting intact.
+    from .surface_speckles import clean_surface_speckles
+    before_speckles = base.copy()
+    endpoint_reports = {}
+    views = []
+    for name, pixels in (('zero', base), ('regular', native), ('strong', strong)):
+        cleaned, _, endpoint_reports[name] = clean_surface_speckles(pixels, source_support)
+        views.append(cleaned)
+    base, native, strong = views
+    report = {'version': '2.17', 'backend': 'Live pyramid line reconstruction',
         'requested_options': asdict(options), 'accepted_run': maps['report'],
         'independent_scale_runs': reports, 'line_border_cleanup': borders, 'line_reconstruction': reconstruction,
         'color_correction': color, 'preparation_seconds': perf_counter()-start,
+        'surface_speckles': endpoint_reports,
         'normal_run_unchanged': True,
         'note': 'Cached reconstructed stroke profiles and fixed RGB color transform. Strokes/AA off. Other settings require Prepare again.'}
-    preview = LinePreview(base, native, strong, support, report)
+    preview = LinePreview(base, native, strong, support, report, before_speckles)
     preview.report['preparation_seconds'] = perf_counter()-start
     return preview
 
@@ -114,7 +133,8 @@ def save_line_test(preview, strength, directory, source, reference=None):
     directory.mkdir(parents=True, exist_ok=True)
     selected, report = preview.render(strength)
     selected.save(directory/'02_selected.png')
-    preview.render(0)[0].save(directory/'01_v214_baseline.png')
+    Image.fromarray(preview.before_speckles).save(directory/'00_before_speckle_cleanup.png')
+    preview.render(0)[0].save(directory/'01_reconstruction_off.png')
     preview.render(200)[0].save(directory/'03_reconstruction_200.png')
     source.save(directory/'edited_source.png')
     if reference is not None:

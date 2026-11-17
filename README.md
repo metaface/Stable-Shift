@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.16** replaces the live preview's darkening/widening control with fitted smooth strokes. It regularizes their centers and measured widths, then rebuilds antialiased coverage using the existing ink colors. Prepare once; the slider still updates from cached pixels. No new dependencies.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.17** adds small dark surface-fragment cleanup to every cached live view, including 0%. The accepted V2.16 smooth-stroke fitting is unchanged. No new dependencies or extra strength settings.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -14,17 +14,19 @@ For a fresh ZIP installation, extract into a new folder and use the Start launch
 
 Load your pair/settings and choose **Prepare live pyramid**. Then drag **Line reconstruction %** or type a value:
 
-- **0%**: exact V2.14 cleaned-border result.
+- **0%**: reconstruction off, with surface-speckle cleanup still applied.
 - **100%** (initial value): full smooth fitted-stroke candidate.
 - **200%**: longer smoothing along strokes, rather than wider/darker ink.
+
+The cleanup lightens compact dark paint fragments near established ink. Connected strokes, short elongated stitches and distant details have separate exclusions. It operates on each cached endpoint in final RGB colors, so it can reduce speckling even with reconstruction at zero. Some grain attached to the ink can remain.
 
 Try **25, 50 and 100** first. These blend the base toward a genuinely different candidate; the old darkening-only gate is gone. Regularization can lighten rough protrusions and darken the smooth replacement path. Ink color comes from the cleaned native image, with source tracing locating the work area. Integrated stroke width is measured rather than deliberately expanded. A local under-ink paint estimate supports signed coverage changes; it is not pasted across whole surfaces.
 
 Use **Result zoom: 100% / 200% / 400%** and drag the result to pan. Zoom uses nearest-neighbor display so it does not conceal pixel noise. The fitted stroke itself has 4x4 subpixel coverage. Saved images retain full resolution.
 
-**Save PNG + timings** records the displayed strength and frozen settings. **Save live test** exports the 0% baseline, displayed selection, 200% view, full inputs and settings, with a ZIP when they fit within 30 MiB. **Save maps** records the signed changes relative to the displayed cache's 0% base. No slider move or export reruns denoising.
+**Save PNG + timings** records the displayed strength and frozen settings. **Save live test** exports the original pre-cleanup base (`00_before_speckle_cleanup.png`), cleaned 0% view (`01_reconstruction_off.png`), displayed selection, 200% view, full inputs and settings, with a ZIP when they fit within 30 MiB. **Save maps** records the baseline speckle correction and the displayed changes relative to the cleaned 0% base separately. No slider move or export reruns denoising.
 
-Other cleanup/color settings require **Prepare live pyramid** again. The normal Run and earlier comparison buttons remain available. This is a local geometric model: intersections, sharp corners and already-missing strokes can remain imperfect, and 200% can round small details. See [V2.16 validation](docs/VALIDATION_V216.md).
+Other cleanup/color settings require **Prepare live pyramid** again. The normal Run and earlier comparison buttons remain available. This is a local geometric model: intersections, sharp corners and already-missing strokes can remain imperfect, and 200% can round small details. See [V2.17 validation](docs/VALIDATION_V217.md).
 
 ## Compare line borders on the preferred pyramid
 
