@@ -1,7 +1,7 @@
 """Prepare once, then render line-preservation strength from fixed RGB endpoints.
 
-The zero endpoint is the pyramid/border result with surface speckles cleaned.
-The original pre-cleanup base is retained for comparison. Recovery uses
+The zero endpoint restores source pixels only where traces justify them.
+The old wide-copy baseline is retained for comparison. Recovery uses
 fitted stroke centers/widths and signed coverage changes, never reference
 geometry or a wide source copy-back. Slider rendering does no image analysis or cleanup.
 """
@@ -18,6 +18,7 @@ import numpy as np
 from PIL import Image
 
 from .line_reconstruction import reconstruct_lines
+from .stroke_paths import trace_stroke_paths
 
 
 def validate_strength(value):
@@ -29,7 +30,7 @@ def validate_strength(value):
 
 class LinePreview:
     """Immutable post-color endpoints; sparse blends make strength reversible."""
-    def __init__(self, base, native, strong, support, report, before_speckles=None):
+    def __init__(self, base, native, strong, support, report, original_base=None, path_maps=None):
         self.base = np.array(base, dtype=np.uint8, copy=True)
         native = np.asarray(native)
         strong = np.asarray(strong)
@@ -39,11 +40,12 @@ class LinePreview:
         self.values = tuple(a.reshape(-1, 3)[self.indices].copy()
                             for a in (self.base, native, strong))
         self.support = np.array(support, dtype=bool, copy=True)
-        self.before_speckles = self.base.copy() if before_speckles is None else np.array(before_speckles, dtype=np.uint8, copy=True)
-        if self.before_speckles.shape != self.base.shape:
-            raise ValueError('The pre-speckle baseline must match the preview dimensions.')
+        self.original_base = self.base.copy() if original_base is None else np.array(original_base, dtype=np.uint8, copy=True)
+        if self.original_base.shape != self.base.shape:
+            raise ValueError('The original baseline must match the preview dimensions.')
+        self.path_maps = {key: np.array(value, copy=True) for key, value in (path_maps or {}).items()}
         self.report = deepcopy(report)
-        for a in (self.base, self.before_speckles, self.indices, self.support, *self.values):
+        for a in (self.base, self.original_base, self.indices, self.support, *self.values, *self.path_maps.values()):
             a.flags.writeable = False
 
     def render(self, strength):
@@ -61,18 +63,18 @@ class LinePreview:
             'changed_pixels_percent': float(100*np.count_nonzero(
                 np.any(values != self.values[0], axis=1))/self.support.size),
             'render_seconds': perf_counter()-start,
-            'meaning': '0 = reconstruction off with surface-speckle cleanup; 100 = smooth fitted strokes; 200 = stronger geometry smoothing.',
+            'meaning': '0 = traced source preservation only; 100 = smooth traced strokes; 200 = stronger same-path smoothing.',
             'upstream_reprocessed': False}
         return Image.fromarray(rgb), report
 
     def diagnostics(self, image, report):
         signed = np.asarray(image).astype(np.int16)-self.base.astype(np.int16)
-        speckles = self.base.astype(np.int16)-self.before_speckles.astype(np.int16)
-        return {'line_support': self.support.astype(np.float32),
+        preservation = self.base.astype(np.int16)-self.original_base.astype(np.int16)
+        return {'line_support': self.support.astype(np.float32), **self.path_maps,
                 'line_preservation_signed_rgb': signed,
                 'line_preservation_change': np.mean(np.abs(signed), axis=2)/16,
-                'surface_speckle_signed_rgb': speckles,
-                'surface_speckle_change': np.mean(np.abs(speckles), axis=2)/16,
+                'source_preservation_signed_rgb': preservation,
+                'source_preservation_change': np.mean(np.abs(preservation), axis=2)/16,
                 'report': deepcopy(report)}
 
 
@@ -89,7 +91,8 @@ def prepare_line_preview(reference, edited, options, progress=None):
         progress('Live line preview: rebuilding pyramid and cleaning line borders')
     pyramid, paint, _ = pyramid_field(_lab(local), _lab(layers['half']),
                                      _lab(layers['quarter']), capture_paint=True)
-    previous = _rgb(pyramid)
+    pyramid_rgb = _rgb(pyramid)
+    previous = pyramid_rgb.copy()
     previous[core] = local[core]
     base, _, borders = clean_line_borders(previous, local, _rgb(paint), core, diagnostics=False)
     if progress:
@@ -101,28 +104,29 @@ def prepare_line_preview(reference, edited, options, progress=None):
         support = trace_source_lines(np.asarray(edited), structure_maps(edited),
                                      continue_faint=True)['source_line_core']
     source_support = support > .5
-    native, strong, support, reconstruction = reconstruct_lines(base, source_support)
+    paths = trace_stroke_paths(base, source_support)
+    original_base = base.copy()
+    # Restore only justified ink/short marks/filled objects from the old native
+    # handoff. All other pixels in its wide guard stay on the clean pyramid.
+    replace = core & ~paths['copy_back']
+    base[replace] = pyramid_rgb[replace]
+    native, strong, support, reconstruction = reconstruct_lines(base, source_support, paths=paths)
     transform, color = comparison._shared_color(reference, local, options)
     if transform is not None:
-        base, native, strong = (transform.apply(a) for a in (base, native, strong))
-    # Clean each fixed endpoint in its final RGB colors. This directly limits
-    # the repair to lightening paint outliers, and leaves accepted fitting intact.
-    from .surface_speckles import clean_surface_speckles
-    before_speckles = base.copy()
-    endpoint_reports = {}
-    views = []
-    for name, pixels in (('zero', base), ('regular', native), ('strong', strong)):
-        cleaned, _, endpoint_reports[name] = clean_surface_speckles(pixels, source_support)
-        views.append(cleaned)
-    base, native, strong = views
-    report = {'version': '2.17', 'backend': 'Live pyramid line reconstruction',
+        base, native, strong, original_base = (transform.apply(a) for a in (base, native, strong, original_base))
+    report = {'version': '2.18', 'backend': 'Live pyramid traced-stroke reconstruction',
         'requested_options': asdict(options), 'accepted_run': maps['report'],
         'independent_scale_runs': reports, 'line_border_cleanup': borders, 'line_reconstruction': reconstruction,
         'color_correction': color, 'preparation_seconds': perf_counter()-start,
-        'surface_speckles': endpoint_reports,
+        'source_preservation': {'pixels_returned_to_pyramid': int(replace.sum()),
+            'changed_rgb_pixels': int(np.any(base != original_base, axis=2).sum()),
+            'trace_validation': paths['report']},
         'normal_run_unchanged': True,
         'note': 'Cached reconstructed stroke profiles and fixed RGB color transform. Strokes/AA off. Other settings require Prepare again.'}
-    preview = LinePreview(base, native, strong, support, report, before_speckles)
+    path_maps = {'stroke_path_ids': paths['path_ids'], 'stroke_paths_accepted': paths['accepted'],
+        'stroke_filled_exclusion': paths['filled'], 'stroke_short_unfitted': paths['short'],
+        'stroke_source_copyback': paths['copy_back'], 'stroke_filled_fit_guard': paths['filled_fit_guard']}
+    preview = LinePreview(base, native, strong, support, report, original_base, path_maps)
     preview.report['preparation_seconds'] = perf_counter()-start
     return preview
 
@@ -133,12 +137,15 @@ def save_line_test(preview, strength, directory, source, reference=None):
     directory.mkdir(parents=True, exist_ok=True)
     selected, report = preview.render(strength)
     selected.save(directory/'02_selected.png')
-    Image.fromarray(preview.before_speckles).save(directory/'00_before_speckle_cleanup.png')
+    Image.fromarray(preview.original_base).save(directory/'00_original_preservation_base.png')
     preview.render(0)[0].save(directory/'01_reconstruction_off.png')
     preview.render(200)[0].save(directory/'03_reconstruction_200.png')
     source.save(directory/'edited_source.png')
     if reference is not None:
         reference.save(directory/'color_reference.png')
+    for key in ('stroke_paths_accepted', 'stroke_filled_exclusion', 'stroke_source_copyback'):
+        if key in preview.path_maps:
+            Image.fromarray(np.uint8(preview.path_maps[key] > 0)*255).save(directory/(key+'.png'))
     (directory/'live_line_settings.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     files = sorted(directory.glob('*.png'))+[directory/'live_line_settings.json']
     archive = directory/'share_live_line_test.zip'

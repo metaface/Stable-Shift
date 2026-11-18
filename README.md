@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.17** adds small dark surface-fragment cleanup to every cached live view, including 0%. The accepted V2.16 smooth-stroke fitting is unchanged. No new dependencies or extra strength settings.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.18** validates connected stroke paths before restoring or fitting source ink. Tiny fragments cannot seed a reconstructed line, fitting samples must belong to the same path, and compact filled details receive a separate exclusion. The V2.17 median cleanup has been removed. No new dependencies.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -10,23 +10,23 @@ For a Git checkout, close the app and pull the branch you are testing with Git B
 
 For a fresh ZIP installation, extract into a new folder and use the Start launcher. It installs base requirements; optional CPU/GPU BM3D can be installed with the app buttons. For older installations updated by copying a ZIP over existing files, see [cleanup notes](docs/CLEANUP.md). `python app.py` remains supported.
 
-## Live smooth-line test
+## Live traced-stroke test
 
-Load your pair/settings and choose **Prepare live pyramid**. Then drag **Line reconstruction %** or type a value:
+Load the usual pair/settings and choose **Prepare live pyramid**. Then use **Line reconstruction %**:
 
-- **0%**: reconstruction off, with surface-speckle cleanup still applied.
-- **100%** (initial value): full smooth fitted-stroke candidate.
-- **200%**: longer smoothing along strokes, rather than wider/darker ink.
+- **0%**: traced source preservation, without stroke fitting.
+- **100%**: full fitting on validated connected paths.
+- **200%**: longer smoothing along those same paths.
 
-The cleanup lightens compact dark paint fragments near established ink. Connected strokes, short elongated stitches and distant details have separate exclusions. It operates on each cached endpoint in final RGB colors, so it can reduce speckling even with reconstruction at zero. Some grain attached to the ink can remain.
+A source guard only marks where to look. Actual darker, two-sided source profiles must form a connected centerline at least 12 native pixels long, with real spatial extent. Chains split at junctions; short attached spurs are pruned. Small independent dashes stay unfitted. Samples cannot jump to another path, and their positions along the traced chain must be locally compatible. Ink RGB comes from native pixels on that path.
 
-Try **25, 50 and 100** first. These blend the base toward a genuinely different candidate; the old darkening-only gate is gone. Regularization can lighten rough protrusions and darken the smooth replacement path. Ink color comes from the cleaned native image, with source tracing locating the work area. Integrated stroke width is measured rather than deliberately expanded. A local under-ink paint estimate supports signed coverage changes; it is not pasted across whole surfaces.
+The trace also gates the old source copy-back. Unsupported pixels in the wide source guard stay on the clean quarter/half/full pyramid rather than restoring native texture. Filled features such as the nose, their nearby rims, and junctions are excluded from thin-stroke fitting. Their existing pixels are not rebuilt as guessed lines. This replaces V2.17's median cleanup.
 
-Use **Result zoom: 100% / 200% / 400%** and drag the result to pan. Zoom uses nearest-neighbor display so it does not conceal pixel noise. The fitted stroke itself has 4x4 subpixel coverage. Saved images retain full resolution.
+Use **100% / 200% / 400% result zoom** and drag to pan. The line preview still blends cached pixels; moving its strength reruns neither denoising nor tracing/fitting. Higher powers do not lower the path-validation threshold.
 
-**Save PNG + timings** records the displayed strength and frozen settings. **Save live test** exports the original pre-cleanup base (`00_before_speckle_cleanup.png`), cleaned 0% view (`01_reconstruction_off.png`), displayed selection, 200% view, full inputs and settings, with a ZIP when they fit within 30 MiB. **Save maps** records the baseline speckle correction and the displayed changes relative to the cleaned 0% base separately. No slider move or export reruns denoising.
+**Save live test** exports the original wide-preservation base (`00_original_preservation_base.png`), traced 0% (`01_reconstruction_off.png`), selected result, 200%, full inputs, accepted-path/filled-region/copy-back masks and settings. **Save maps** includes exact native path IDs and signed source-preservation/fitting comparisons. This is a real processing change; the maps explain where it applied.
 
-Other cleanup/color settings require **Prepare live pyramid** again. The normal Run and earlier comparison buttons remain available. This is a local geometric model: intersections, sharp corners and already-missing strokes can remain imperfect, and 200% can round small details. See [V2.17 validation](docs/VALIDATION_V217.md).
+Other cleanup/color settings require Prepare again. Normal Run and previous comparison buttons retain their existing processing. Missing source evidence, unusually tangled true strokes and very small details can still limit the result; this is geometric tracing, not semantic recognition. See [V2.18 validation](docs/VALIDATION_V218.md).
 
 ## Compare line borders on the preferred pyramid
 

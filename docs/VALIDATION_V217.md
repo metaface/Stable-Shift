@@ -1,4 +1,6 @@
-# V2.17 — dark surface fragments in the live preview
+# V2.17 — withdrawn surface-fragment experiment
+
+This candidate was withdrawn after the user reported persistent speckling and changes to the nose shape. V2.18 removes this cleanup and validates connected source paths instead. The checks below describe the historical experiment, not the active method.
 
 The reported speckling is present in saved PNGs at zero strength. On the cached
 supplied cabin pair it is also visible in the retained older zero-strength
