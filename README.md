@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.18** validates connected stroke paths before restoring or fitting source ink. Tiny fragments cannot seed a reconstructed line, fitting samples must belong to the same path, and compact filled details receive a separate exclusion. The V2.17 median cleanup has been removed. No new dependencies.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.19** fixes dark specks created by line-border paint sampling in **Prepare live pyramid** and **Compare line borders**. Sampling stops before entering a darker source region and uses a clear coarse-paint plateau. Connected stroke fitting remains from V2.18. No new dependencies or settings.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -18,21 +18,23 @@ Load the usual pair/settings and choose **Prepare live pyramid**. Then use **Lin
 - **100%**: full fitting on validated connected paths.
 - **200%**: longer smoothing along those same paths.
 
+The border-sampling fix runs during preparation, before all three views. Compare the same crop with your saved V2.18 result, including at 0%. It addresses the earlier sampler creating dark spots beside the nose; restricting the later stroke fitter alone did not remove them. Existing source grain can remain.
+
 A source guard only marks where to look. Actual darker, two-sided source profiles must form a connected centerline at least 12 native pixels long, with real spatial extent. Chains split at junctions; short attached spurs are pruned. Small independent dashes stay unfitted. Samples cannot jump to another path, and their positions along the traced chain must be locally compatible. Ink RGB comes from native pixels on that path.
 
 The trace also gates the old source copy-back. Unsupported pixels in the wide source guard stay on the clean quarter/half/full pyramid rather than restoring native texture. Filled features such as the nose, their nearby rims, and junctions are excluded from thin-stroke fitting. Their existing pixels are not rebuilt as guessed lines. This replaces V2.17's median cleanup.
 
 Use **100% / 200% / 400% result zoom** and drag to pan. The line preview still blends cached pixels; moving its strength reruns neither denoising nor tracing/fitting. Higher powers do not lower the path-validation threshold.
 
-**Save live test** exports the original wide-preservation base (`00_original_preservation_base.png`), traced 0% (`01_reconstruction_off.png`), selected result, 200%, full inputs, accepted-path/filled-region/copy-back masks and settings. **Save maps** includes exact native path IDs and signed source-preservation/fitting comparisons. This is a real processing change; the maps explain where it applied.
+**Save live test** exports the current border-cleaned wide-preservation base (`00_original_preservation_base.png`), traced 0% (`01_reconstruction_off.png`), selected result, 200%, full inputs, accepted-path/filled-region/copy-back masks and settings. That base is before trace gating, not a frozen V2.18 output. **Save maps** includes exact native path IDs and signed source-preservation/fitting comparisons.
 
-Other cleanup/color settings require Prepare again. Normal Run and previous comparison buttons retain their existing processing. Missing source evidence, unusually tangled true strokes and very small details can still limit the result; this is geometric tracing, not semantic recognition. See [V2.18 validation](docs/VALIDATION_V218.md).
+Other cleanup/color settings require Prepare again. Normal Run and comparisons other than line borders retain their existing processing. Missing source evidence, unusually tangled true strokes and very small details can still limit the result; this is geometric tracing, not semantic recognition. See [V2.19 validation](docs/VALIDATION_V219.md) and [stroke-path validation](docs/VALIDATION_V218.md).
 
 ## Compare line borders on the preferred pyramid
 
 Load your usual pair and keep source-line tracing enabled. Choose **Compare line borders**. It produces `01_pyramid_v213.png` and `02_clean_line_borders.png` from one fixed pyramid, with the same global colors and stroke cleanup/AA off. The border candidate is applied at full strength; there are no extra settings to tune for this test.
 
-The old source-line mask includes paint outside the ink and copies that paint back into the reconstructed image. This experiment measures darker ink profiles separately and estimates adjacent paint from the clean coarse field on the same side of each stroke. It cleans paint closer to ink and removes off-color contamination from partially covered edge pixels, while retaining measured ink and stronger coverage. Old wide-core paint pixels are intentionally allowed to change.
+The old source-line mask includes paint outside the ink and copies that paint back into the reconstructed image. This experiment measures darker ink profiles separately and estimates adjacent paint from the clean coarse field on the same side of each stroke. Sampling now stops at source brightness drops as well as recognized ink, and chooses the brightest valid paint plateau before applying supported gentle shading. It cleans paint closer to ink and removes off-color contamination from partially covered edge pixels, while retaining measured ink and stronger coverage. Old wide-core paint pixels are intentionally allowed to change.
 
 Check the bib pocket, waist seams, faint strokes and opposite sides of outlines. Full inputs/results, native crops, measured-ink/change maps and `share_line_border_test.zip` are exported. Tight gaps and ambiguous shapes can retain fringe; low-coverage details can also be mistaken for paint. The normal Run and existing reconstruction comparison are unchanged. See [line-border validation](docs/VALIDATION_V214.md).
 

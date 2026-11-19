@@ -199,7 +199,7 @@ def export_line_border_comparison(reference, edited, options, directory, progres
         else:
             omitted.append(name)
     share_zip = 'share_line_border_test.zip' if sum((directory/name).stat().st_size for name in required) <= budget else None
-    summary = {'version': '2.14', 'requested_options': asdict(options), 'accepted_run': maps['report'],
+    summary = {'version': '2.19', 'requested_options': asdict(options), 'accepted_run': maps['report'],
         'independent_scale_runs': scale_reports, 'color_correction': color_report, 'line_border_cleanup': border_report,
         'observed_ink_pixels_changed_after_shared_color': int(np.count_nonzero(np.any(views[0][2][ink] != views[1][2][ink], axis=1))),
         'comparison': 'Same V2.13 pyramid and global colors; previous wide copy-back versus full-strength adjacent paint cleanup. Strokes/AA off. Old wide-core pixels are allowed to change.',

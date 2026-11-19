@@ -454,7 +454,7 @@ def test_ui_line_border_comparison_exports_one_fixed_pyramid_pair(tmp_path, monk
             root.update()
             time.sleep(.01)
         assert not app.busy
-        folder, = tmp_path.glob('line_border_test_v214_*')
+        folder, = tmp_path.glob('line_border_test_v219_*')
         saved = json.loads((folder/'line_border_settings_and_timings.json').read_text())
         assert saved['accepted_run']['options']['antialias_strength'] == 0
         assert saved['accepted_run']['options']['stroke_strength'] == 0

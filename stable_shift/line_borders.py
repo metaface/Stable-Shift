@@ -2,8 +2,9 @@
 
 Ink is detected using two-sided RGB profiles in the native working image.
 Same-side paint comes from reconstructed coarse layers. Rays stop at another
-observed ink profile; native surface texture and reference pixels are not used
-as replacement paint. Existing RGB ink/antialiasing is retained at higher ink
+observed ink profile or a source brightness drop into a filled shape. Native
+surface texture and reference pixels are not used as replacement paint.
+Existing RGB ink/antialiasing is retained at higher ink
 coverage. This is a source-image measurement, not semantic line recognition.
 """
 import math
@@ -87,13 +88,19 @@ def clean_line_borders(original, full, paint, core, strength=100.0, diagnostics=
         ux, uy = (vx[top:bottom].astype(np.float32), vy[top:bottom].astype(np.float32))
         eligible = (distance[top:bottom] > 0) & (distance[top:bottom] <= 6)
         clear = np.ones(eligible.shape, bool)
+        ray_peak = light[top:bottom].copy()
         values = []
         weights = []
-        # Sample outward on this side of the stroke, stopping at another ink.
+        # A filled object's boundary need not have a two-sided ink profile.
+        # Stop when native evidence turns back toward a darker region as well
+        # as at recognized ink; otherwise a ray can walk into a nose/shadow.
         for step in range(1, 8):
             qx, qy = (cx + ux * step, cy + uy * step)
             crossed = cv2.remap(ink_byte, qx, qy, cv2.INTER_NEAREST, borderMode=cv2.BORDER_REPLICATE) > 0
             clear &= ~crossed
+            ray_light = sample(light, qx, qy)
+            clear &= ray_light >= ray_peak - 12
+            ray_peak = np.maximum(ray_peak, ray_light)
             if step in (3, 5, 7):
                 value = sample(paint_float, qx, qy)
                 values.append(value)
@@ -101,8 +108,15 @@ def clean_line_borders(original, full, paint, core, strength=100.0, diagnostics=
         count = np.sum(weights, axis=0)
         stack = np.stack(values)
         surface = np.zeros_like(stack[0])
+        best_light = np.full(eligible.shape, -np.inf, np.float32)
         for value, valid in zip(values, weights):
-            surface = np.where(valid[:, :, None], value, surface)
+            # Coarse ink blur can extend ahead of the native boundary. Use the
+            # clean paint plateau, rather than the last (possibly darkening)
+            # coarse sample. Gentle supported gradients are extrapolated below.
+            value_light = value @ LUMA
+            choose = valid & (value_light > best_light)
+            surface[choose] = value[choose]
+            best_light[choose] = value_light[choose]
         curvature = np.linalg.norm(stack[0] - 2 * stack[1] + stack[2], axis=2)
         trend = (stack[2] - stack[0]) / 4
         # Extrapolate only a gentle consistent trend, preserving clean shading.
@@ -148,7 +162,8 @@ def clean_line_borders(original, full, paint, core, strength=100.0, diagnostics=
         'reach_pixels': 6,
         'maximum_replacement_rgb_distance': 90,
         'maximum_profile_residual': 24,
-        'algorithm': 'one-sided coarse paint; observed ink coverage; blocked sampling paths',
+        'maximum_ray_luminance_drop': 12,
+        'algorithm': 'source-bounded one-sided coarse paint; brightest valid plateau; observed ink coverage',
         'note': 'Old wide core may change. Measured ink and stronger coverage remain. Antialiased colors may change using observed ink/clean paint; no fixed black.',
         'seconds': perf_counter() - start,
     }

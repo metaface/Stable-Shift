@@ -1,5 +1,10 @@
 # V2.18 — connected paths authorize preservation and fitting
 
+This records the V2.18 test. Subsequent user testing still showed the nose-area
+speckles. Its unchanged-nose and path tests did not establish their removal.
+Stage-by-stage replay found the earlier line-border sampler creating dark paint
+spots; V2.19 corrects that stage. See [the follow-up validation](VALIDATION_V219.md).
+
 The previous candidate accepted dark components containing five pixels and
 used direction-compatible neighbors without proving they belonged to the same
 stroke. A fragment in the wide source guard could therefore survive copy-back

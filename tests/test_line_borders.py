@@ -62,8 +62,11 @@ def test_keeps_ink_antialiasing_on_opposite_paint_colors():
     assert np.abs(output[fringe].astype(float)-paint[fringe]).max() <= 1
 
 
-def test_clean_shading_continues_to_the_line_without_an_added_color_band():
+@pytest.mark.parametrize('reverse', [False, True])
+def test_clean_shading_continues_to_the_line_without_an_added_color_band(reverse):
     source, paint, ink, core = seam(gradient=True)
+    if reverse:
+        source, paint, ink, core = (a[:, ::-1].copy() for a in (source, paint, ink, core))
     output, _, _ = clean_line_borders(source, source, paint, core)
     assert np.array_equal(output[ink], source[ink])
     assert np.abs(output[~ink].astype(int)-source[~ink]).max() <= 1
@@ -116,6 +119,35 @@ def test_paint_sampling_stops_at_another_stroke_in_a_narrow_gap():
     assert np.array_equal(output[:, 63:68], source[:, 63:68])
 
 
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('color,ink_color,filled_color', [
+    ((145, 155, 165), (20, 30, 40), (25, 30, 35)),
+    ((80, 115, 165), (20, 35, 60), (25, 40, 55)),
+])
+def test_sampling_near_a_filled_object_does_not_invent_dark_paint(
+        reverse, color, ink_color, filled_color):
+    # The broad filled object's edge has no two-sided ink profile. Its coarse
+    # blur begins before that edge, so both source evidence and plateau choice
+    # matter. The previous sampler darkened this clean gap by up to 27 levels.
+    source = np.full((100, 150, 3), color, np.uint8)
+    source[:, 59:61] = ink_color
+    source[15:85, 74:110] = filled_color
+    paint = cv2.GaussianBlur(source, (0, 0), 2)
+    core = np.zeros(source.shape[:2], bool)
+    core[:, 56:64] = True
+    clean_gap = np.zeros(core.shape, bool)
+    clean_gap[30:70, 62:70] = True
+    opaque = np.zeros(core.shape, bool)
+    opaque[:, 59:61] = True
+    opaque[20:80, 76:108] = True
+    if reverse:
+        source, paint, core, clean_gap, opaque = (
+            a[:, ::-1].copy() for a in (source, paint, core, clean_gap, opaque))
+    result, _, _ = clean_line_borders(source, source, paint, core)
+    assert np.max(np.abs(result[clean_gap].astype(int)-source[clean_gap])) <= 1
+    np.testing.assert_array_equal(result[opaque], source[opaque])
+
+
 def test_shading_step_and_isolated_bright_details_are_not_dark_ink():
     source = np.full((100, 160, 3), [70, 95, 130], np.uint8)
     source[:, 80:] += 20
@@ -164,6 +196,7 @@ def test_comparison_reuses_the_same_pyramid_layers_and_color_fit(tmp_path, monke
     assert all(not opt.color_match and opt.stroke_strength == 0 and opt.antialias_strength == 0 for _, opt in calls)
     assert summary['observed_ink_pixels_changed_after_shared_color'] == 0
     assert summary['normal_run_unchanged'] is True
+    assert summary['version'] == '2.19'
     with ZipFile(tmp_path/summary['share_zip']) as archive:
         assert {'01_pyramid_v213.png', '02_clean_line_borders.png', 'edited_source.png',
                 'color_reference.png', 'line_border_settings_and_timings.json'} <= set(archive.namelist())

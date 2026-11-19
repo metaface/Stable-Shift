@@ -39,7 +39,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.18 — Traced Stroke Paths')
+        root.title('Stable Shift V2.19 — Source-Bounded Borders')
         root.geometry('1400x980')
         root.minsize(1040, 820)
         self.images = {'clean': None, 'edited': None}
@@ -529,7 +529,7 @@ class App:
         parent = filedialog.askdirectory(title='Choose parent folder for a line border comparison')
         if not parent:
             return
-        directory = Path(parent)/datetime.now().strftime('line_border_test_v214_%Y%m%d_%H%M%S_%f')
+        directory = Path(parent)/datetime.now().strftime('line_border_test_v219_%Y%m%d_%H%M%S_%f')
         self.begin('Comparing the same pyramid with previous borders and adjacent paint cleanup')
         def worker():
             try:
@@ -628,7 +628,7 @@ class App:
         parent = filedialog.askdirectory(title='Save cached line-preservation test')
         if not parent:
             return
-        directory = Path(parent)/datetime.now().strftime('live_line_test_v218_%Y%m%d_%H%M%S_%f')
+        directory = Path(parent)/datetime.now().strftime('live_line_test_v219_%Y%m%d_%H%M%S_%f')
         try:
             from .live_lines import save_line_test
             archive = save_line_test(self._displayed_line_preview, strength, directory,

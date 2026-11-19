@@ -114,7 +114,7 @@ def prepare_line_preview(reference, edited, options, progress=None):
     transform, color = comparison._shared_color(reference, local, options)
     if transform is not None:
         base, native, strong, original_base = (transform.apply(a) for a in (base, native, strong, original_base))
-    report = {'version': '2.18', 'backend': 'Live pyramid traced-stroke reconstruction',
+    report = {'version': '2.19', 'backend': 'Live pyramid with source-bounded borders and traced strokes',
         'requested_options': asdict(options), 'accepted_run': maps['report'],
         'independent_scale_runs': reports, 'line_border_cleanup': borders, 'line_reconstruction': reconstruction,
         'color_correction': color, 'preparation_seconds': perf_counter()-start,

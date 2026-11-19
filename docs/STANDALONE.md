@@ -1,4 +1,21 @@
-# Stable Shift V2.18 — standalone guide
+# Stable Shift V2.19 — standalone guide
+
+## Border sampling correction
+
+V2.19 changes **Prepare live pyramid** and **Compare line borders**. Earlier
+border cleanup could follow a sampling ray into a broad filled object whose
+edge had no two-sided ink profile. Selecting the farthest coarse sample could
+also select its blurred dark edge. This created dark spots on previously
+lighter paint before the connected-stroke fitter ran.
+
+Rays now stop when source luminance falls more than 12 levels below the highest
+value encountered while moving away from ink. Of the valid coarse samples,
+the brightest paint plateau supplies the replacement; supported gentle trends
+still use the existing extrapolation. Native source pixels constrain sampling
+but do not become replacement texture. There is no new median cleanup or tuning
+control. Restart and **Prepare live pyramid** again, then compare with the
+previous saved crop at 0% as well as fitted strengths. Existing source noise
+and ambiguous boundaries can remain. See [V2.19 validation](VALIDATION_V219.md).
 
 ## Live connected stroke paths
 
@@ -12,11 +29,11 @@ The source trace also limits copy-back from the old native guard. Unsupported gu
 
 Use result zoom and drag to pan. Zoom uses nearest-neighbor display; the fitted stroke itself has antialiased coverage. Save always writes the full native image. **Save PNG + timings** retains the actual applied strength and preparation settings.
 
-**Save live test** writes `00_original_preservation_base.png`, `01_reconstruction_off.png`, `02_selected.png`, `03_reconstruction_200.png`, full inputs and settings. It also includes binary accepted-centerline, filled-region and source-copy-back masks. A share ZIP is added within 30 MiB. The original base is retained for a direct comparison of the source-preservation change.
+**Save live test** writes `00_original_preservation_base.png`, `01_reconstruction_off.png`, `02_selected.png`, `03_reconstruction_200.png`, full inputs and settings. It also includes binary accepted-centerline, filled-region and source-copy-back masks. A share ZIP is added within 30 MiB. The original base includes the current border correction and precedes trace gating; it is not a frozen earlier-version control.
 
 **Save maps** includes `stroke_path_ids` (zero = not fitted; positive values identify individual paths, not confidence), accepted centerlines, filled exclusions and copy-back support. `source_preservation_signed_rgb` is traced zero minus original wide-preservation base; `line_preservation_signed_rgb` is the displayed result minus traced zero. They sum exactly to the total displayed change from the original base. Change maps use mean absolute RGB / 16. Exact IDs/signs stay in the NPZ; clipped color previews cannot identify every distinct path.
 
-Changing inputs or starting normal Run clears the live cache. Other controls need Prepare again. Normal Run, optional legacy strokes/AA, Preserve Edits and the earlier comparison buttons retain their prior processing. The live path fitter includes its own edge coverage, while those separate finishing switches remain off in the experiment.
+Changing inputs or starting normal Run clears the live cache. Other controls need Prepare again. Normal Run, optional legacy strokes/AA, Preserve Edits and comparisons other than line borders retain their prior processing. The live path fitter includes its own edge coverage, while those separate finishing switches remain off in the experiment.
 
 This is source-based geometry rather than semantic line recognition. Missing/weak evidence, legitimate tiny features, complicated junctions, long structured texture and unrecognized filled details remain limits. See [V2.18 validation](VALIDATION_V218.md).
 
