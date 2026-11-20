@@ -130,6 +130,11 @@ def estimate_strength(rgb, requested, protected=None):
     # same bounded slider values, but have different strength calibrations.
     noise = min(float(requested.noise), max(0., min(100., (float(target[0])-.5)/7.5*100)))
     color_noise = min(float(requested.color_noise), max(0., min(100., (float(np.max(target[1:]))-1.275)/21.675*100)))
+    if requested.method == 'SCUNet':
+        # The blind model has no noise-sigma input. Use the requested output
+        # blend ceilings, then apply the source-derived spatial permissions.
+        # BM3D's sigma-to-slider inversion is not a neural-model calibration.
+        noise, color_noise = float(requested.noise), float(requested.color_noise)
     effective = replace(requested, noise=noise, color_noise=color_noise)
     # Independent fine scatter can be gray. It authorizes the fine backend
     # without authorizing broad brightness flattening of gray surfaces.
@@ -153,6 +158,9 @@ def estimate_strength(rgb, requested, protected=None):
         skip_reason = 'The selected method has no fine denoising stage.'
     elif noise == 0 and color_noise == 0:
         skip_reason = 'Eligible multiscale scatter is below the backend minimum, or both denoiser ceilings are zero.'
+    elif requested.method == 'SCUNet' and not (
+            (noise > 0 and np.any(backend_luma)) or (color_noise > 0 and np.any(backend_chroma))):
+        skip_reason = 'No source-derived spatial permission for SCUNet at the requested blend ceilings.'
     else:
         skip_reason = None
     skip_backend = skip_reason is not None
@@ -179,6 +187,8 @@ def estimate_strength(rgb, requested, protected=None):
         'note': 'Multiscale candidates and source-only spatial limits, including bright-neutral fine texture. These are heuristics, not semantic noise certainty.',
         'seconds': perf_counter()-started,
     }
+    if requested.method == 'SCUNet':
+        report['backend_strength_kind'] = 'Fixed blind model; requested output-blend ceilings with source-derived spatial limits, not BM3D sigmas.'
     maps = {
         'auto_luminance_strength': luma_amount.astype(np.float32),
         'auto_chroma_strength': color_amount.astype(np.float32),

@@ -9,3 +9,5 @@ startup.log
 /auto_test_v*/
 /dist/
 /_legacy_backup/
+/models/
+/scunet_test_v*/

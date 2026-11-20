@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.19** fixes dark specks created by line-border paint sampling in **Prepare live pyramid** and **Compare line borders**. Sampling stops before entering a darker source region and uses a clear coarse-paint plateau. Connected stroke fitting remains from V2.18. No new dependencies or settings.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.20** adds an optional **SCUNet** backend and a direct **Compare SCUNet** test. The accepted V2.19 pyramid/border/stroke processing stays available. SCUNet's dependencies and model are installed only when requested.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -9,6 +9,16 @@ Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited 
 For a Git checkout, close the app and pull the branch you are testing with Git Bash. Git handles tracked file removals; no cleanup script is needed. Keep using **START_Stable_Shift.bat**. The existing `.venv` is reused; this version adds no dependencies.
 
 For a fresh ZIP installation, extract into a new folder and use the Start launcher. It installs base requirements; optional CPU/GPU BM3D can be installed with the app buttons. For older installations updated by copying a ZIP over existing files, see [cleanup notes](docs/CLEANUP.md). `python app.py` remains supported.
+
+## Try SCUNet on its own
+
+1. Choose **SCUNet NVIDIA setup** for a compatible NVIDIA GPU, or **SCUNet CPU setup**. Setup reuses a working PyTorch runtime when possible, installs the optional loader, and downloads/verifies the official 72 MB model. New NVIDIA installs use CUDA 12.8 PyTorch wheels. Restart after setup.
+2. Keep your usual denoiser selected, load the usual pair/settings, and choose **Compare SCUNet**. The comparison uses the official **real-PSNR** model at full output strength. Automatic limits, source copy-back, local/broad cleanup, pyramid reconstruction, stroke fitting and AA do not touch the SCUNet-only candidate.
+3. Compare `01_current_pipeline.png` with `02_scunet_only.png` and the native crops in the new folder. Both use exactly the current pipeline's frozen global color correction, when available. `scunet_before_color.png` is the uncolored model output; `03_input_same_colors.png` is the corresponding input control. The current result in the app is retained; the comparison writes separate files.
+
+A matching prepared live pyramid is reused; otherwise the current pipeline is prepared once at the selected line-reconstruction strength. Full inputs, model/device/tile details and actual settings are saved with a share ZIP within 30 MiB. CPU inference can be slow. NVIDIA inference uses CUDA when available and reports its actual device. Overlapping native-size tiles limit memory; they are blended without resizing. A GPU memory failure retries smaller tiles rather than switching denoisers.
+
+The **SCUNet** dropdown option is a separate experiment: normal Run uses it as the backend inside the existing guards and cleanup. Its luminance/color sliders blend a fixed model output rather than selecting a learned noise sigma. Auto uses those blend ceilings and the existing source-derived spatial limits, without BM3D's sigma-to-slider mapping. Start with **Compare SCUNet** to judge its full output without those constraints. A learned denoiser can change fine lines or texture, so compare the results before replacing the current method. See [SCUNet validation and sources](docs/VALIDATION_V220.md).
 
 ## Live traced-stroke test
 

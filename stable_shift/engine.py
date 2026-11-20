@@ -232,6 +232,16 @@ def _denoise_candidate(raw, opts, maps):
         candidate=_bm3d(raw,opts.noise,opts.color_noise)
     elif opts.method=='GPU BM3D':
         candidate=_gpu_bm3d(raw,opts.noise,opts.color_noise)
+    elif opts.method=='SCUNet':
+        from .scunet import denoise, blend_strength
+        if opts.noise == opts.color_noise == 0:
+            candidate = raw.copy()
+            report = {'skipped': True, 'reason': 'Both model-blend sliders are zero.'}
+        else:
+            full, report = denoise(raw)
+            candidate = blend_strength(raw, full, opts.noise, opts.color_noise)
+        maps['_scunet_report'] = dict(report, luminance_blend=opts.noise,
+            color_blend=opts.color_noise, strength_note='Fixed real-PSNR model; pipeline sliders blend its output, not noise sigmas.')
     elif opts.method in ('Color only','Region cleanup only'):
         candidate=raw.copy()
     else:
@@ -248,7 +258,7 @@ def _restore_quality_base(clean:Image.Image, edited:Image.Image, opts:Options, d
         candidate=_denoise_candidate(raw,opts,maps)
     else:
         if opts.method not in ('NLM','Boundary constrained','CPU BM3D','BM3D (optional)',
-                                'GPU BM3D','Color only','Region cleanup only'):
+                                'GPU BM3D','SCUNet','Color only','Region cleanup only'):
             raise ValueError(f'Unknown method {opts.method}')
         candidate=np.asarray(denoised_candidate)
         if candidate.shape!=raw.shape or candidate.dtype!=np.uint8:
@@ -430,6 +440,7 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
     if diagnostics:
         maps.update(stage_diagnostics(original,denoised_rgb,cleanup_rgb,rgb,colored=palette_rgb,stroked=stroke_rgb))
     diagnostics_finished=perf_counter()
+    scunet_report = maps.pop('_scunet_report', None)
     maps['report']={'version':'2.12','backend':opts.method,'resolution':list(edited.size),
         'source_analysis_seconds':analyzed-start,'denoise_seconds':denoised-analyzed,
         'cleanup_seconds':cleaned-denoised,'color_seconds':colored-cleaned,
@@ -447,4 +458,6 @@ def restore_quality(clean, edited, opts, diagnostics=True, progress=None, *, den
         'palette_note':'Fitted to local-cleanup baseline; not refitted after broad correction. Classic retains the V2.8 path.',
         'antialias_note':'Optional final edge filtering; source-core RGB protection applies before color/strokes/AA.',
         'difference_note':'Total change includes palette correction; it is not a noise map.'}
+    if scunet_report is not None:
+        maps['report']['scunet'] = scunet_report
     return Image.fromarray(rgb),maps

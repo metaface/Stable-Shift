@@ -13,12 +13,20 @@ from tempfile import TemporaryDirectory
 from time import perf_counter
 from zipfile import ZipFile, ZIP_DEFLATED
 import json
+from hashlib import sha256
 
 import numpy as np
 from PIL import Image
 
 from .line_reconstruction import reconstruct_lines
 from .stroke_paths import trace_stroke_paths
+
+
+def image_signature(image):
+    rgb = image.convert('RGB')
+    digest = sha256(str(rgb.size).encode('ascii'))
+    digest.update(np.asarray(rgb).tobytes())
+    return digest.hexdigest()
 
 
 def validate_strength(value):
@@ -114,7 +122,8 @@ def prepare_line_preview(reference, edited, options, progress=None):
     transform, color = comparison._shared_color(reference, local, options)
     if transform is not None:
         base, native, strong, original_base = (transform.apply(a) for a in (base, native, strong, original_base))
-    report = {'version': '2.19', 'backend': 'Live pyramid with source-bounded borders and traced strokes',
+    report = {'version': '2.20', 'backend': 'Live pyramid with source-bounded borders and traced strokes',
+        'input_signatures': {'edited': image_signature(edited), 'reference': image_signature(reference)},
         'requested_options': asdict(options), 'accepted_run': maps['report'],
         'independent_scale_runs': reports, 'line_border_cleanup': borders, 'line_reconstruction': reconstruction,
         'color_correction': color, 'preparation_seconds': perf_counter()-start,

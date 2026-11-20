@@ -1,4 +1,61 @@
-# Stable Shift V2.19 — standalone guide
+# Stable Shift V2.20 — standalone guide
+
+## SCUNet comparison
+
+SCUNet is optional. The ordinary launcher and existing denoisers do not import
+PyTorch or download a model. Use **SCUNet NVIDIA setup** or **SCUNet CPU setup**
+once, then restart. A working matching PyTorch/torchvision runtime is reused;
+otherwise setup installs matched official CPU or CUDA 12.8 wheels. Spandrel
+0.4.2 loads the official `scunet_color_real_psnr.pth` model. The 72 MB weights
+are downloaded from the authors' release and checked by size and SHA-256 before
+an atomic cache replacement. They live in `models/`, outside Git and the small
+standalone ZIP. Partial or mismatched downloads are rejected.
+
+For the first test, keep the usual current denoiser selected and press **Compare
+SCUNet**. The model runs on the edited input at full strength, without source
+guards, automatic attenuation, surface cleanup, pyramid rebuilding, stroke
+fitting or AA. It does not receive the color reference. The current pipeline
+uses the selected denoiser/settings and live line-reconstruction strength; a
+matching cached preparation is reused. Source/reference pixel signatures and
+preparation settings must match before reuse.
+
+The new `scunet_test_v220_<timestamp>` folder contains:
+
+- `01_current_pipeline.png`: the current live pyramid at the selected strength.
+- `02_scunet_only.png`: the model output with the same frozen global colors.
+- `03_input_same_colors.png`: the edited input with those same colors.
+- `scunet_before_color.png`: the model output before any color correction.
+- Full inputs, a comparison sheet, native crops and settings/timings, plus a
+  share ZIP when the two compared results and original inputs fit within 30 MiB.
+
+Those two results and inputs take priority in the ZIP. The raw model output,
+additional input control and crops are included as space allows; the JSON lists
+omitted extras, which remain in the full folder.
+
+The comparison does not replace the image currently displayed in the app.
+Open the exported images/crops. If global color fitting is unreliable, all
+three primary views retain their own source-space colors. Color coefficients
+are reused from the current result, never refitted separately to favor SCUNet.
+
+Inference uses float32 RGB at native resolution. Auto device selection uses
+CUDA when PyTorch can initialize it, otherwise CPU. The actual device, model
+checksum, PyTorch version, padded size and tiles are recorded. Inputs are
+reflected to a 64-pixel grid; padding is removed afterward. Default 512-pixel
+tiles overlap by 128 pixels with raised-cosine blending and aligned origins.
+This controls memory but is not identical to whole-image inference. GPU memory
+exhaustion retries smaller tiles, with the attempts recorded. Other errors
+propagate; no replacement denoiser is silently used. CPU processing can take
+minutes on large inputs.
+
+Selecting **SCUNet** in the ordinary denoiser dropdown instead puts the model
+inside the existing processing pipeline. Luminance and color sliders blend
+its fixed output; they are not noise inputs to the learned network. Auto uses
+the requested blend ceilings and source-derived spatial permissions, skipping
+the model when no location is eligible. It does not apply BM3D's sigma-to-slider
+mapping to SCUNet. The separate comparison deliberately bypasses those limits
+and all subsequent cleanup for the model-only candidate. Existing
+BM3D/cleanup defaults and V2.19 processing are retained. See
+[validation and official sources](VALIDATION_V220.md).
 
 ## Border sampling correction
 

@@ -39,7 +39,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.19 — Source-Bounded Borders')
+        root.title('Stable Shift V2.20 — SCUNet Comparison')
         root.geometry('1400x980')
         root.minsize(1040, 820)
         self.images = {'clean': None, 'edited': None}
@@ -116,7 +116,7 @@ class App:
         row.pack(fill='x')
         ttk.Label(row, text='Denoiser:').pack(side='left')
         ttk.Combobox(row, textvariable=self.method, state='readonly', width=22, values=[
-            'GPU BM3D', 'CPU BM3D', 'Region cleanup only', 'NLM', 'Boundary constrained', 'Color only'
+            'GPU BM3D', 'CPU BM3D', 'SCUNet', 'Region cleanup only', 'NLM', 'Boundary constrained', 'Color only'
         ]).pack(side='left', padx=7)
         ttk.Checkbutton(row, text='Automatic strength', variable=self.automatic).pack(side='left', padx=6)
         ttk.Checkbutton(row, text='Reference color correction', variable=self.palette).pack(side='left', padx=10)
@@ -163,6 +163,7 @@ class App:
         reconstruction.pack(fill='x', pady=3)
         ttk.Button(reconstruction, text='Compare reconstruction', command=self.compare_reconstruction).pack(side='left', padx=7)
         ttk.Button(reconstruction, text='Compare line borders', command=self.compare_line_borders).pack(side='left', padx=7)
+        ttk.Button(reconstruction, text='Compare SCUNet', command=self.compare_scunet).pack(side='left', padx=7)
         ttk.Label(reconstruction, text='Experimental comparisons. Normal Run retains V2.12 cleanup.').pack(side='left', padx=5)
         ttk.Label(strokes, text='100 applies the full candidate.').pack(side='left', padx=7)
         live = ttk.Frame(controls)
@@ -198,6 +199,8 @@ class App:
         installbar.grid(row=4, column=0, sticky='ew', pady=7)
         ttk.Button(installbar, text='Install CPU BM3D', command=lambda: self.install('bm3d==4.0.3')).pack(side='right', padx=4)
         ttk.Button(installbar, text='Install GPU BM3D (CUDA 12)', command=lambda: self.install('bm3d-cupy[cuda12]==0.1.3')).pack(side='right', padx=4)
+        ttk.Button(installbar, text='SCUNet NVIDIA setup', command=lambda: self.install_scunet('nvidia')).pack(side='right', padx=4)
+        ttk.Button(installbar, text='SCUNet CPU setup', command=lambda: self.install_scunet('cpu')).pack(side='right', padx=4)
         dnd_message = 'Drop one image onto each input panel (file paths with spaces are supported).'
         if not dnd_available:
             dnd_message = 'Drag/drop unavailable. Open buttons still work; see startup.log for the load error.'
@@ -549,6 +552,37 @@ class App:
             self.root.after_cancel(self._line_job)
             self._line_job = None
 
+    def compare_scunet(self):
+        if self.busy:
+            return
+        if self.mode.get() != 'Restore Quality':
+            messagebox.showinfo('Compare SCUNet', 'This comparison is for Restore Quality.')
+            return
+        try:
+            clean, edited, opts = self.snapshot()
+            from .live_lines import validate_strength
+            strength = validate_strength(self.line_strength.get())
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Inputs/settings', str(exc))
+            return
+        parent = filedialog.askdirectory(title='Choose parent folder for SCUNet versus current pipeline')
+        if not parent:
+            return
+        directory = Path(parent)/datetime.now().strftime('scunet_test_v220_%Y%m%d_%H%M%S_%f')
+        cached = self.line_preview
+        if cached is not None and cached.report['requested_options'] != asdict(opts):
+            cached = None
+        self.begin('Comparing full-strength SCUNet alone with the current live pyramid')
+        def worker():
+            try:
+                from .scunet_comparison import export_scunet_comparison
+                summary = export_scunet_comparison(clean, edited, opts, directory, self.progress,
+                    line_strength=strength, current_preview=cached)
+                self.queue.put(('scunet_compared', (directory, summary)))
+            except Exception as exc:
+                self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
     def prepare_live_lines(self):
         if self.busy:
             return
@@ -732,6 +766,34 @@ class App:
                 self.queue.put(('error', (str(exc), traceback.format_exc())))
         Thread(target=worker, daemon=True).start()
 
+    def install_scunet(self, accelerator):
+        if self.busy:
+            return
+        from .scunet import install_commands, ensure_weights
+        commands = install_commands(sys.executable, accelerator)
+        self.begin('Setting up optional SCUNet ('+accelerator+'); runtime downloads can be large')
+        def worker():
+            try:
+                # Reuse a working matching runtime, especially in an environment
+                # that already has PyTorch. Validate in a new process so loaded
+                # extension modules cannot disguise a changed installation.
+                probe = ("import torch, torchvision; assert torch.cuda.is_available(), 'CUDA-enabled PyTorch and a compatible NVIDIA driver are required; new installs use CUDA 12.8 wheels.'"
+                         if accelerator == 'nvidia' else 'import torch, torchvision')
+                checked = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, timeout=90)
+                for command in commands[1:] if checked.returncode == 0 else commands:
+                    self.progress('SCUNet setup: installing '+('PyTorch runtime' if '--index-url' in command else 'model loader'))
+                    proc = subprocess.run(command, capture_output=True, text=True, timeout=1800)
+                    if proc.returncode:
+                        raise RuntimeError((proc.stderr or proc.stdout)[-2200:])
+                verified = subprocess.run([sys.executable, '-c', probe+'; import spandrel'], capture_output=True, text=True, timeout=90)
+                if verified.returncode:
+                    raise RuntimeError('SCUNet runtime installed but could not initialize. '+(verified.stderr or verified.stdout)[-1800:])
+                ensure_weights(progress=self.progress)
+                self.queue.put(('installed', 'SCUNet real-PSNR installed and weights verified. Restart, keep your usual denoiser selected, then choose Compare SCUNet.'))
+            except Exception as exc:
+                self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
     def tick(self):
         if self.busy and self.started is not None:
             self.status.set(f'{self.phase} | {perf_counter() - self.started:.1f}s elapsed')
@@ -812,6 +874,11 @@ class App:
                     report = summary['line_border_cleanup']
                     self.status.set('Line border comparison saved: '+str(directory)+' | '+(summary['share_zip'] or 'Full images exceed ZIP size limit.'))
                     self.result_info.set(f'Same pyramid/colors, finishing off. Border cleanup changed {report["changed_pixels_percent"]:.2f}% | Old wide-core pixels may change; measured ink retained.')
+                elif kind == 'scunet_compared':
+                    directory, summary = data
+                    self.status.set('SCUNet comparison saved: '+str(directory)+' | Open 02_scunet_only.png | '+(summary['share_zip'] or 'Full images exceed ZIP size limit.'))
+                    model = summary['scunet']
+                    self.result_info.set(f'SCUNet alone: {model["device_name"]}, {model["seconds"]:.2f}s. Full model output; no source guards, cleanup or stroke fitting. Saved views share colors.')
                 elif kind == 'strokes_compared':
                     directory, summary = data
                     candidate = summary['candidate']
