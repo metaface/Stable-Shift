@@ -14,7 +14,7 @@ from PIL import Image, ImageOps
 from .frozen_palette import freeze_palette
 
 
-METHODS = ('Classic', 'Robust global')
+METHODS = ('Classic', 'Robust global', 'Global palette')
 
 
 @dataclass(frozen=True)
@@ -137,20 +137,8 @@ Both methods are scored on those same held-out colors, never cleanup strength.
     return model, report
 
 
-def fit_scunet_color(reference, baseline_rgb, *, enabled=True):
-    """Keep reference lighting active when compositions do not support pairing.
-
-    The aligned robust fit remains preferred. Its old Classic/Off fallback is
-    replaced here by one global RGB palette transform, fitted from independent
-    color distributions rather than matching positions. No reference field or
-    geometry enters either output transform.
-    """
-    if not enabled:
-        return None, {'selected_method': 'Off', 'reason': 'Reference correction disabled.'}
-    model, paired = fit_global_color(reference, baseline_rgb)
-    if paired['selected_method'] == 'Robust global':
-        return model, paired
-
+def fit_global_palette(reference, baseline_rgb):
+    """Explicit overall RGB palette transfer, independent of object positions."""
     def statistics(image):
         small = np.asarray(ImageOps.contain(image.convert('RGB'), (384, 384),
                            Image.Resampling.LANCZOS), dtype=np.float64)/255
@@ -166,12 +154,53 @@ def fit_scunet_color(reference, baseline_rgb, *, enabled=True):
     gain = np.clip(reference_spread/np.maximum(source_spread, 1/255), .05, 4)
     gain[source_spread < 1/255] = 1
     model = GlobalColor(np.diag(gain), source_pivot, reference_pivot)
-    return model, {'requested_method': 'Reference colors', 'selected_method': 'Global palette',
-        'reason': 'Paired colors were unreliable; reference brightness and palette remain active through independent global color statistics.',
-        'paired_fit_reason': paired['reason'], 'color_space': 'RGB',
+    return model, {'requested_method': 'Global palette', 'selected_method': 'Global palette',
+        'reason': 'Global palette selected; independent RGB statistics transfer overall brightness and color.',
+        'color_space': 'RGB',
         'matrix': model.matrix.tolist(), 'source_pivot': source_pivot.tolist(),
         'reference_pivot': reference_pivot.tolist(), 'channel_gains': gain.tolist(),
         'source_channel_spread': source_spread.tolist(),
         'reference_channel_spread': reference_spread.tolist(),
         'spatial_reference_transfer': False,
         'note': 'A composition-independent style transfer, not semantic matching of objects. New or differently sized colored objects can influence global statistics.'}
+
+
+def fit_reference_color(reference, baseline_rgb, *, method='Classic', enabled=True,
+                        classic_baseline=None):
+    """Shared method selection for normal Run and the SCUNet preview.
+
+    Classic uses the existing LAB matcher. Robust global retains its validated
+    Classic fallback, now reported explicitly. Global palette is opt-in rather
+    than a hidden replacement for either selected method. The optional Classic
+    baseline preserves normal Run's pre/post-broad fitting convention.
+    """
+    if method not in METHODS:
+        raise ValueError('Unknown color method: '+str(method))
+    if not enabled:
+        return None, {'requested_method': method, 'selected_method': 'Off',
+                      'reason': 'Reference correction disabled.'}
+    baseline = baseline_rgb if classic_baseline is None else classic_baseline
+    if method == 'Classic':
+        return freeze_palette(reference, baseline), {'requested_method': method,
+            'selected_method': method, 'reason': 'Classic LAB correction selected.'}
+    if method == 'Global palette':
+        return fit_global_palette(reference, baseline_rgb)
+    transform, report = fit_global_color(reference, baseline_rgb)
+    if report['selected_method'] == 'Classic':
+        if classic_baseline is not None:
+            transform = freeze_palette(reference, classic_baseline)
+        report = dict(report, fallback_from=method, fallback_reason=report['reason'])
+    return transform, report
+
+
+def fit_scunet_color(reference, baseline_rgb, *, method='Classic', enabled=True):
+    return fit_reference_color(reference, baseline_rgb, method=method, enabled=enabled)
+
+
+def color_method_label(report):
+    """Identify an applied fallback without relabeling the requested setting."""
+    applied = report.get('selected_method', 'Off')
+    requested = report.get('requested_method', applied)
+    if applied != 'Off' and applied != requested:
+        return f'{requested} -> {applied} (fallback)'
+    return applied

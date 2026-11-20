@@ -1,8 +1,8 @@
 """One SCUNet pass, then cached edge-aware surface-color cleanup.
 
 No classical denoiser, source copy-back, region fill or stroke fitter participates.
-Both cleanup endpoints start from the same uncolored model output. One uniform
-color transform is then frozen across every view, including cleanup-off.
+Both cleanup endpoints start from the same uncolored model output. The selected
+color correction is then frozen across every view, including cleanup-off.
 """
 from copy import deepcopy
 from dataclasses import asdict
@@ -100,10 +100,11 @@ def prepare_scunet_cleanup(reference, edited, options, progress=None, *, cached=
     regular, strong, cleanup = cleanup_candidates(model_rgb, progress)
     if progress:
         progress('SCUNet color cleanup: freezing one global color correction for all strengths')
-    transform, color = fit_scunet_color(reference, model_rgb, enabled=options.color_match)
+    transform, color = fit_scunet_color(reference, model_rgb,
+                                      method=options.color_method, enabled=options.color_match)
     apply = lambda rgb: rgb.copy() if transform is None else transform.apply(rgb)
     base, regular, strong = (apply(rgb) for rgb in (model_rgb, regular, strong))
-    report = {'version': '2.22', 'preview_kind': 'scunet_cleanup',
+    report = {'version': '2.23', 'preview_kind': 'scunet_cleanup',
         'backend': 'SCUNet with optional color cleanup',
         'input_signatures': signatures, 'requested_options': asdict(options),
         'scunet': model_report, 'model_output_reused': reused,
@@ -111,7 +112,7 @@ def prepare_scunet_cleanup(reference, edited, options, progress=None, *, cached=
         'same_color_transform': True, 'normal_processing_unchanged': True,
         'bypassed_controls': ['Denoiser selection', 'Automatic strength', 'Luminance/color denoise',
             'Local/broad cleanup', 'Source/edge guards', 'Pyramid', 'Line reconstruction', 'Strokes', 'AA'],
-        'note': 'Full SCUNet output plus one independent color-averaging pass. Reference lighting and colors use a frozen uniform RGB transform, with independent palette statistics when paired fitting fails. No reference detail or original source texture is copied back.'}
+        'note': 'Full SCUNet output plus one independent color-averaging pass. The selected color method is fitted once to SCUNet and frozen across strengths. Classic uses the existing LAB correction field; Robust global uses a uniform RGB transform with an explicit Classic fallback; Global palette is selected explicitly. No raw source texture is copied back.'}
     preview = ScunetCleanupPreview(base, regular, strong, model_rgb, report)
     preview.report['preparation_seconds'] = perf_counter()-started
     return preview

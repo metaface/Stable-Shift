@@ -18,7 +18,7 @@ def test_recomposed_reference_still_darkens_and_transfers_warm_or_cool_lighting(
     source = palette_scene()
     expected = np.uint8(np.clip(source.astype(float)*gains+.5, 0, 255))
     reference = Image.fromarray(expected[:, ::-1].copy())
-    model, report = fit_scunet_color(reference, source)
+    model, report = fit_scunet_color(reference, source, method='Global palette')
     assert report['selected_method'] == 'Global palette'
     corrected = model.apply(source)
     assert np.abs(corrected.astype(float)-expected).mean() < 1
@@ -32,7 +32,7 @@ def test_recomposed_reference_still_darkens_and_transfers_warm_or_cool_lighting(
 def test_constant_channel_and_disabled_reference_have_explicit_behavior():
     source = np.full((48, 64, 3), 130, np.uint8)
     reference = Image.new('RGB', (83, 71), (65, 45, 25))
-    model, report = fit_scunet_color(reference, source)
+    model, report = fit_scunet_color(reference, source, method='Global palette')
     assert report['selected_method'] == 'Global palette'
     np.testing.assert_array_equal(model.apply(source), np.full_like(source, (65, 45, 25)))
     model, report = fit_scunet_color(reference, source, enabled=False)
@@ -47,7 +47,8 @@ def test_scunet_preparation_keeps_reference_lighting_at_every_cached_strength(mo
         calls.append(True)
         return rgb.copy(), {'device_name': 'Test stub'}
     monkeypatch.setattr(scunet_cleanup, 'denoise', model)
-    preview = scunet_cleanup.prepare_scunet_cleanup(reference, Image.fromarray(source), Options(color_match=True))
+    preview = scunet_cleanup.prepare_scunet_cleanup(reference, Image.fromarray(source),
+        Options(color_match=True, color_method='Global palette'))
     first = np.array(preview.render(100)[0])
     for strength in (0, 100, 200, 100):
         image, report = preview.render(strength)

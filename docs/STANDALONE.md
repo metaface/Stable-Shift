@@ -1,15 +1,30 @@
-# Stable Shift V2.22 — standalone guide
+# Stable Shift V2.23 — standalone guide
+
+## Shared color-method selector
+
+**Run / Preview** and **Prepare SCUNet cleanup** now honor the same **Color
+method** selector. Choose **Classic** for the existing LAB correction, including
+when using SCUNet. Choose **Robust global** for the paired RGB fit; if that fit
+fails validation, both paths apply Classic and display **Robust global ->
+Classic (fallback)**. Choose **Global palette** explicitly for the RGB-statistics
+transfer added in V2.22. That transfer can tint a neutral overlay along with the
+scene and is no longer selected implicitly for SCUNet.
+
+The result bar and saved settings retain requested and applied methods. Change
+the selector, then prepare again; matching SCUNet inference is reused. Every
+live strength shares the chosen frozen correction. **Reference color
+correction** off bypasses all three methods. See [focused checks](VALIDATION_V223.md).
 
 ## Reference lighting with different compositions
 
 Keep **Reference color correction** enabled, then choose **Prepare SCUNet
-cleanup**. V2.21 could silently disable correction if a reference with different
-object positions failed the paired global fit. V2.22 instead uses **Global
-palette**, a uniform RGB transfer fitted to the images' independent color
-distributions. It can darken, brighten, warm or cool the target without copying
-the reference's edges, texture or grid. Reliable paired fits retain their
-existing coefficients. The result bar now identifies the effective reference
-method; **Off** means the reference checkbox is disabled.
+cleanup**. V2.21 could silently disable a failed paired fit; V2.22 replaced that
+with Global palette while still ignoring the selector. V2.23 corrects the
+selection: failed Robust global fits use the existing Classic fallback, and
+Global palette is an explicit choice. Its independent RGB statistics can
+darken, brighten, warm or cool the whole target without copying reference
+geometry. Reliable paired fits retain their existing coefficients. The result
+bar identifies the requested/applied methods; Off means the checkbox is disabled.
 
 Every live cleanup strength shares the same frozen color coefficients,
 including 0%. The SCUNet model and accepted blotch filter are unchanged. Global
@@ -35,10 +50,11 @@ copy-back, classical denoiser, pyramid, stroke reconstruction or AA. The old
 denoiser, automatic-strength, local/broad and line/finishing controls do not
 affect this separate path. They retain their meaning for the older tests.
 
-Reference correction fits one uniform global RGB transform to SCUNet alone,
-then applies it to the control and both candidates. It uses the reference
-checkbox, with a reliable paired global fit or the independent Global palette
-fallback; Classic spatial correction is not used here. Its coefficients can differ
+Reference correction fits the selected method once to SCUNet alone,
+then applies the selected correction to the control and both candidates. The
+reference checkbox and color-method selector are honored. Classic uses its
+existing LAB correction field; Robust global has an explicit Classic fallback,
+and Global palette is opt-in. The fitted correction can differ
 from **Compare SCUNet**, which fits colors to the classical comparator. No
 reference detail, grid or shading field is transferred. Repeating preparation
 can reuse the raw model output if the edited pixels still match, while
@@ -46,7 +62,7 @@ recomputing cleanup and colors. Changing inputs clears the active live cache.
 
 Use result zoom and pan to compare 0, 100 and 200. **Save PNG + timings** saves
 the displayed image and its actual applied strength. **Save live test** writes
-`scunet_cleanup_v222_<timestamp>` containing:
+`scunet_cleanup_v223_<timestamp>` containing:
 
 - `00_scunet_only.png`, with the common color correction and cleanup off.
 - `01_cleanup_100.png`, `02_cleanup_200.png` and `03_selected.png`.

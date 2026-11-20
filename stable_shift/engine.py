@@ -204,21 +204,10 @@ def _palette(clean, restored):
 
 def correct_palette(clean, local_rgb, rgb, opts):
     """Finish one fixed cleanup result; Classic retains its exact V2.8 path."""
-    report={'requested_method':opts.color_method,'selected_method':'Off'}
-    if not opts.color_match:
-        return rgb,report
-    if opts.color_method=='Robust global':
-        from .global_color import fit_global_color
-        transform,report=fit_global_color(clean,local_rgb)
-        if report['selected_method']=='Robust global':
-            return transform.apply(rgb),report
-    if opts.blotch_strength>0:
-        from .frozen_palette import freeze_palette
-        rgb=freeze_palette(clean,local_rgb).apply(rgb)
-    else:
-        rgb=_palette(clean,rgb)
-    report['selected_method']='Classic'
-    return rgb,report
+    from .global_color import fit_reference_color
+    transform,report=fit_reference_color(clean,local_rgb,method=opts.color_method,
+        enabled=opts.color_match,classic_baseline=rgb if opts.blotch_strength<=0 else None)
+    return (rgb if transform is None else transform.apply(rgb)),report
 
 
 def _denoise_candidate(raw, opts, maps):

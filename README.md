@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.22** keeps the accepted SCUNet/blotch cleanup and restores reference lighting when the reference has a different composition. **Prepare SCUNet cleanup** provides full SCUNet output with focused color cleanup and live strength control. SCUNet's dependencies and model are installed only when requested.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.23** makes **Run / Preview** and **Prepare SCUNet cleanup** honor the same **Color method** selector. SCUNet's accepted denoising/blotch cleanup and cached strength control remain available. SCUNet's dependencies and model are installed only when requested.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -12,6 +12,14 @@ For a fresh ZIP installation, extract into a new folder and use the Start launch
 
 ## SCUNet with live color cleanup
 
+Choose **Color method** before preparing:
+
+- **Classic** uses the original LAB correction, including on the SCUNet path. Use it to compare with the old alley result.
+- **Robust global** tries the existing RGB fit. If it cannot fit reliably, both Run paths use Classic and clearly display **Robust global -> Classic (fallback)**.
+- **Global palette** explicitly selects V2.22's overall RGB-statistics transfer. It can tint neutral text along with the scene; it is no longer forced by the SCUNet path.
+
+The result bar and saved report distinguish the requested method from the applied method. Changing the selector requires preparation again; a matching raw SCUNet result is reused. See [V2.23 color-selection checks](docs/VALIDATION_V223.md).
+
 After the optional SCUNet setup, load the usual images and press **Prepare SCUNet cleanup**. This runs the full model once and prepares two color-cleanup candidates. The live slider changes to **SCUNet cleanup %**:
 
 - **0%**: SCUNet alone.
@@ -22,9 +30,9 @@ Moving the slider blends fixed results immediately. It never reruns SCUNet or ac
 
 This path uses one edge-aware color-averaging pass on SCUNet's raw output. Its continuous color limits allow cleaning beside lines without a wide protected border. There is no source copy-back, old local/broad cleanup, region fill, pyramid or stroke reconstruction. Their controls do not affect this test. Both candidates start independently from SCUNet alone; the 200% candidate is not another pass over 100%.
 
-Reference correction, when enabled, fits one uniform global RGB transform to SCUNet alone and uses those same coefficients for every cleanup strength. Unlike the older **Compare SCUNet** control, it does not fit colors to the classical pipeline. If matching positions cannot support a reliable fit, **Global palette** transfers brightness and color using independent image statistics. Correction no longer silently turns off for a different composition. The result bar shows **Reference: Robust global**, **Global palette**, or **Off**. Keep **Reference color correction** enabled to transfer the reference lighting.
+Reference correction is fitted once to SCUNet alone using the selected method, then frozen across every cleanup strength. Classic retains its existing LAB correction field; the other methods use global RGB transforms. The older **Compare SCUNet** control separately fits colors to its classical comparator. Keep **Reference color correction** enabled to transfer lighting, or disable it for **Off**.
 
-The reference supplies no geometry or texture. Strong cleanup can soften genuine faint marks, gradients and texture; use the live zero control to judge that tradeoff. Repeating preparation can reuse a matching raw model result while refreshing cleanup and colors. See [V2.22 reference-color checks](docs/VALIDATION_V222.md). The sparkle-halo experiment is excluded because it also changed faint shading in accepted images.
+Strong cleanup can soften genuine faint marks, gradients and texture; use the live zero control to judge that tradeoff. Repeating preparation can reuse a matching raw model result while refreshing cleanup and colors. The sparkle-halo experiment remains excluded because it also changed faint shading in accepted images.
 
 Development checks now focus on the active SCUNet, reference-color and blotch-cleanup path. Run relevant focused tests for a change; retained BM3D, pyramid, stroke and AA tests are historical coverage and do not need routine reruns when those paths are untouched.
 

@@ -52,7 +52,7 @@ def test_ui_cleanup_uses_one_model_pass_live_blends_and_saves_the_displayed_sett
         app.line_strength.set(200)
         monkeypatch.setattr(filedialog, 'askdirectory', lambda **k: str(tmp_path))
         app.save_live_lines()
-        directory, = tmp_path.glob('scunet_cleanup_v222_*')
+        directory, = tmp_path.glob('scunet_cleanup_v223_*')
         saved = json.loads((directory/'scunet_cleanup_settings.json').read_text())
         assert saved['scunet_cleanup']['strength'] == 135
         np.testing.assert_array_equal(Image.open(directory/'03_selected.png'), displayed)

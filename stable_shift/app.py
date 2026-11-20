@@ -18,6 +18,7 @@ import numpy as np
 
 from .engine import Options, restore_quality, preserve_edits
 from .image_inputs import drop_path, load_image
+from .global_color import METHODS, color_method_label
 
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES, COPY, REFUSE_DROP
@@ -39,7 +40,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.22 — SCUNet Reference Lighting')
+        root.title('Stable Shift V2.23 — Shared Color Methods')
         root.geometry('1400x980')
         root.minsize(1040, 820)
         self.images = {'clean': None, 'edited': None}
@@ -148,7 +149,7 @@ class App:
         finishing.pack(fill='x', pady=3)
         ttk.Label(finishing, text='Color method:').pack(side='left')
         ttk.Combobox(finishing, textvariable=self.color_method, state='readonly', width=15,
-                     values=['Classic', 'Robust global']).pack(side='left', padx=7)
+                     values=METHODS).pack(side='left', padx=7)
         ttk.Checkbutton(finishing, text='Optional edge antialiasing', variable=self.aa_enabled).pack(side='left', padx=7)
         ttk.Label(finishing, text='Strength:').pack(side='left')
         ttk.Spinbox(finishing, from_=0, to=100, width=5, textvariable=self.aa_strength).pack(side='left', padx=5)
@@ -665,7 +666,7 @@ class App:
             self.live_strength_label.set('SCUNet cleanup %:')
             self.live_help.set('SCUNet: 0 = model only, 100 = color cleanup, 200 = stronger cleanup. The slider reuses cached pixels. Old guards, pyramid, strokes and AA do not run.')
             self.result_info.set(f'SCUNet | Color cleanup {cleanup["strength"]:.1f}% | '
-                f'Reference: {report["color_correction"]["selected_method"]} | '
+                f'Reference: {color_method_label(report["color_correction"])} | '
                 f'Changed from model only: {cleanup["changed_pixels_percent"]:.2f}% | '
                 f'Blend: {cleanup["render_seconds"]*1000:.0f} ms | Drag the zoomed result to pan')
             self.status.set('SCUNet cleanup updated from cache; the model, cleanup and colors were not rerun. Other settings require Prepare SCUNet cleanup again.')
@@ -705,7 +706,7 @@ class App:
         parent = filedialog.askdirectory(title='Save cached SCUNet cleanup test' if scunet else 'Save cached line-preservation test')
         if not parent:
             return
-        prefix = 'scunet_cleanup_v222_' if scunet else 'live_line_test_v219_'
+        prefix = 'scunet_cleanup_v223_' if scunet else 'live_line_test_v219_'
         directory = Path(parent)/datetime.now().strftime(prefix+'%Y%m%d_%H%M%S_%f')
         try:
             if scunet:
@@ -880,15 +881,18 @@ class App:
                     self.post_color = None if stroke_signed is None else np.uint8(self.pre_antialias.astype(np.int16)-stroke_signed)
                     report = self.maps['report']
                     parts = [report['backend']]
+                    color = report.get('color_correction', {})
+                    if color:
+                        parts.append('Color: '+color_method_label(color))
                     if report.get('automatic_strength', {}).get('enabled'):
                         parts.append(self.auto_description(report['automatic_strength']))
                     parts += [f'{key.removesuffix("_seconds")}: {value:.2f}s' for key, value in report.items() if key.endswith('_seconds')]
                     self.result_info.set(' | '.join(parts))
                     region = report.get('broad_normalization', report.get('region_cleanup', {}))
                     self.status.set(f'Finished. Source lines protected {report.get("source_protected_pixels_percent", 0):.1f}% | Broad correction changed {region.get("changed_pixels_percent", 0):.1f}%; mean RGB change {region.get("mean_rgb_change", 0):.2f}/255. Compare native-resolution crops.')
-                    color = report.get('color_correction', {})
                     if color:
-                        self.status.set(self.status.get()+' | Color: '+color['selected_method']+' | AA '+str(report['options']['antialias_strength']))
+                        description = color_method_label(color)
+                        self.status.set(self.status.get()+' | Color: '+description+' | AA '+str(report['options']['antialias_strength']))
                     stroke_report = report.get('stroke_cleanup', {})
                     if stroke_report.get('strength', 0) > 0:
                         self.status.set(self.status.get()+f' | Strokes {stroke_report["strength"]:.0f}: changed {stroke_report["changed_pixels_percent"]:.1f}%')
