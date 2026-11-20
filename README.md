@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.21** adds **Prepare SCUNet cleanup**: full SCUNet output with a focused color-splotch pass and live strength control. The V2.20 model-only comparison and accepted pyramid/stroke method stay available. SCUNet's dependencies and model are installed only when requested.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.22** keeps the accepted SCUNet/blotch cleanup and restores reference lighting when the reference has a different composition. **Prepare SCUNet cleanup** provides full SCUNet output with focused color cleanup and live strength control. SCUNet's dependencies and model are installed only when requested.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -22,7 +22,11 @@ Moving the slider blends fixed results immediately. It never reruns SCUNet or ac
 
 This path uses one edge-aware color-averaging pass on SCUNet's raw output. Its continuous color limits allow cleaning beside lines without a wide protected border. There is no source copy-back, old local/broad cleanup, region fill, pyramid or stroke reconstruction. Their controls do not affect this test. Both candidates start independently from SCUNet alone; the 200% candidate is not another pass over 100%.
 
-Reference correction, when enabled, fits one uniform global RGB transform to SCUNet alone and uses those same coefficients for every cleanup strength. Unlike the older **Compare SCUNet** control, it does not fit colors to the classical pipeline. An unreliable fit leaves source colors. The reference supplies no geometry or texture. Strong cleanup can soften genuine faint marks, gradients and texture; use the live zero control to judge that tradeoff. Repeating preparation can reuse a matching raw model result while refreshing cleanup and colors. See [V2.21 validation](docs/VALIDATION_V221.md).
+Reference correction, when enabled, fits one uniform global RGB transform to SCUNet alone and uses those same coefficients for every cleanup strength. Unlike the older **Compare SCUNet** control, it does not fit colors to the classical pipeline. If matching positions cannot support a reliable fit, **Global palette** transfers brightness and color using independent image statistics. Correction no longer silently turns off for a different composition. The result bar shows **Reference: Robust global**, **Global palette**, or **Off**. Keep **Reference color correction** enabled to transfer the reference lighting.
+
+The reference supplies no geometry or texture. Strong cleanup can soften genuine faint marks, gradients and texture; use the live zero control to judge that tradeoff. Repeating preparation can reuse a matching raw model result while refreshing cleanup and colors. See [V2.22 reference-color checks](docs/VALIDATION_V222.md). The sparkle-halo experiment is excluded because it also changed faint shading in accepted images.
+
+Development checks now focus on the active SCUNet, reference-color and blotch-cleanup path. Run relevant focused tests for a change; retained BM3D, pyramid, stroke and AA tests are historical coverage and do not need routine reruns when those paths are untouched.
 
 ## Try SCUNet on its own
 

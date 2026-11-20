@@ -109,7 +109,7 @@ def test_model_only_zero_and_live_strength_are_reversible_without_the_old_stack(
     np.testing.assert_array_equal(preview.render(0)[0], source)
     monkeypatch.setattr(cleanup, 'cleanup_candidates', forbidden)
     monkeypatch.setattr(cleanup, 'denoise', forbidden)
-    monkeypatch.setattr(cleanup, '_shared_color', forbidden)
+    monkeypatch.setattr(cleanup, 'fit_scunet_color', forbidden)
     first = np.array(preview.render(73)[0])
     for strength in (25, 100, 200, 0, 73):
         image, report = preview.render(strength)
@@ -133,10 +133,10 @@ def test_one_frozen_uniform_transform_applies_to_model_and_both_cleanup_endpoint
     monkeypatch.setattr(cleanup, 'denoise', lambda *a: (raw.copy(), {'device_name': 'Test stub'}))
     transform = GlobalColor(np.diag([.8, .9, .7]), np.zeros(3), np.full(3, .03))
     fits = []
-    def fit(reference, model_rgb, options):
+    def fit(reference, model_rgb, **kwargs):
         fits.append(model_rgb.copy())
         return transform, {'selected_method': 'Robust global'}
-    monkeypatch.setattr(cleanup, '_shared_color', fit)
+    monkeypatch.setattr(cleanup, 'fit_scunet_color', fit)
     regular, strong, _ = cleanup.cleanup_candidates(raw)
     preview = cleanup.prepare_scunet_cleanup(image, image, Options())
     assert len(fits) == 1

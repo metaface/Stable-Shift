@@ -14,7 +14,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageOps
 
 from .live_lines import LinePreview, image_signature
-from .reconstruction_comparison import _shared_color
+from .global_color import fit_scunet_color
 from .scunet import denoise
 from .scunet_comparison import save_bundle
 
@@ -100,10 +100,10 @@ def prepare_scunet_cleanup(reference, edited, options, progress=None, *, cached=
     regular, strong, cleanup = cleanup_candidates(model_rgb, progress)
     if progress:
         progress('SCUNet color cleanup: freezing one global color correction for all strengths')
-    transform, color = _shared_color(reference, model_rgb, options)
+    transform, color = fit_scunet_color(reference, model_rgb, enabled=options.color_match)
     apply = lambda rgb: rgb.copy() if transform is None else transform.apply(rgb)
     base, regular, strong = (apply(rgb) for rgb in (model_rgb, regular, strong))
-    report = {'version': '2.21', 'preview_kind': 'scunet_cleanup',
+    report = {'version': '2.22', 'preview_kind': 'scunet_cleanup',
         'backend': 'SCUNet with optional color cleanup',
         'input_signatures': signatures, 'requested_options': asdict(options),
         'scunet': model_report, 'model_output_reused': reused,
@@ -111,7 +111,7 @@ def prepare_scunet_cleanup(reference, edited, options, progress=None, *, cached=
         'same_color_transform': True, 'normal_processing_unchanged': True,
         'bypassed_controls': ['Denoiser selection', 'Automatic strength', 'Luminance/color denoise',
             'Local/broad cleanup', 'Source/edge guards', 'Pyramid', 'Line reconstruction', 'Strokes', 'AA'],
-        'note': 'Full SCUNet output plus one independent color-averaging pass. The reference supplies only a uniform RGB transform fitted to SCUNet alone. No reference detail or original source texture is copied back.'}
+        'note': 'Full SCUNet output plus one independent color-averaging pass. Reference lighting and colors use a frozen uniform RGB transform, with independent palette statistics when paired fitting fails. No reference detail or original source texture is copied back.'}
     preview = ScunetCleanupPreview(base, regular, strong, model_rgb, report)
     preview.report['preparation_seconds'] = perf_counter()-started
     return preview

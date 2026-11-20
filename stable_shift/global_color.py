@@ -135,3 +135,43 @@ Both methods are scored on those same held-out colors, never cleanup strength.
         return fallback('Held-out colors do not improve sufficiently over Classic.')
     report.update(selected_method='Robust global', reason='Bounded global fit improves held-out color agreement.')
     return model, report
+
+
+def fit_scunet_color(reference, baseline_rgb, *, enabled=True):
+    """Keep reference lighting active when compositions do not support pairing.
+
+    The aligned robust fit remains preferred. Its old Classic/Off fallback is
+    replaced here by one global RGB palette transform, fitted from independent
+    color distributions rather than matching positions. No reference field or
+    geometry enters either output transform.
+    """
+    if not enabled:
+        return None, {'selected_method': 'Off', 'reason': 'Reference correction disabled.'}
+    model, paired = fit_global_color(reference, baseline_rgb)
+    if paired['selected_method'] == 'Robust global':
+        return model, paired
+
+    def statistics(image):
+        small = np.asarray(ImageOps.contain(image.convert('RGB'), (384, 384),
+                           Image.Resampling.LANCZOS), dtype=np.float64)/255
+        samples = small.reshape(-1, 3)
+        low, high = np.percentile(samples, [2, 98], axis=0)
+        trimmed = np.clip(samples, low, high)
+        return trimmed.mean(axis=0), trimmed.std(axis=0)
+
+    source_pivot, source_spread = statistics(Image.fromarray(baseline_rgb))
+    reference_pivot, reference_spread = statistics(reference)
+    # A nearly constant channel still receives the reference offset without
+    # dividing by an unobserved spread or discarding the user's lighting.
+    gain = np.clip(reference_spread/np.maximum(source_spread, 1/255), .05, 4)
+    gain[source_spread < 1/255] = 1
+    model = GlobalColor(np.diag(gain), source_pivot, reference_pivot)
+    return model, {'requested_method': 'Reference colors', 'selected_method': 'Global palette',
+        'reason': 'Paired colors were unreliable; reference brightness and palette remain active through independent global color statistics.',
+        'paired_fit_reason': paired['reason'], 'color_space': 'RGB',
+        'matrix': model.matrix.tolist(), 'source_pivot': source_pivot.tolist(),
+        'reference_pivot': reference_pivot.tolist(), 'channel_gains': gain.tolist(),
+        'source_channel_spread': source_spread.tolist(),
+        'reference_channel_spread': reference_spread.tolist(),
+        'spatial_reference_transfer': False,
+        'note': 'A composition-independent style transfer, not semantic matching of objects. New or differently sized colored objects can influence global statistics.'}

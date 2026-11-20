@@ -39,7 +39,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.21 — SCUNet Color Cleanup')
+        root.title('Stable Shift V2.22 — SCUNet Reference Lighting')
         root.geometry('1400x980')
         root.minsize(1040, 820)
         self.images = {'clean': None, 'edited': None}
@@ -665,6 +665,7 @@ class App:
             self.live_strength_label.set('SCUNet cleanup %:')
             self.live_help.set('SCUNet: 0 = model only, 100 = color cleanup, 200 = stronger cleanup. The slider reuses cached pixels. Old guards, pyramid, strokes and AA do not run.')
             self.result_info.set(f'SCUNet | Color cleanup {cleanup["strength"]:.1f}% | '
+                f'Reference: {report["color_correction"]["selected_method"]} | '
                 f'Changed from model only: {cleanup["changed_pixels_percent"]:.2f}% | '
                 f'Blend: {cleanup["render_seconds"]*1000:.0f} ms | Drag the zoomed result to pan')
             self.status.set('SCUNet cleanup updated from cache; the model, cleanup and colors were not rerun. Other settings require Prepare SCUNet cleanup again.')
@@ -704,7 +705,7 @@ class App:
         parent = filedialog.askdirectory(title='Save cached SCUNet cleanup test' if scunet else 'Save cached line-preservation test')
         if not parent:
             return
-        prefix = 'scunet_cleanup_v221_' if scunet else 'live_line_test_v219_'
+        prefix = 'scunet_cleanup_v222_' if scunet else 'live_line_test_v219_'
         directory = Path(parent)/datetime.now().strftime(prefix+'%Y%m%d_%H%M%S_%f')
         try:
             if scunet:

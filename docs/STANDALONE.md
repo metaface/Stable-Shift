@@ -1,4 +1,21 @@
-# Stable Shift V2.21 — standalone guide
+# Stable Shift V2.22 — standalone guide
+
+## Reference lighting with different compositions
+
+Keep **Reference color correction** enabled, then choose **Prepare SCUNet
+cleanup**. V2.21 could silently disable correction if a reference with different
+object positions failed the paired global fit. V2.22 instead uses **Global
+palette**, a uniform RGB transfer fitted to the images' independent color
+distributions. It can darken, brighten, warm or cool the target without copying
+the reference's edges, texture or grid. Reliable paired fits retain their
+existing coefficients. The result bar now identifies the effective reference
+method; **Off** means the reference checkbox is disabled.
+
+Every live cleanup strength shares the same frozen color coefficients,
+including 0%. The SCUNet model and accepted blotch filter are unchanged. Global
+palette approximates an overall look: differently colored or differently sized
+objects can influence its statistics. The halo experiment is not included in
+this release. See [focused checks](VALIDATION_V222.md).
 
 ## SCUNet color cleanup
 
@@ -20,8 +37,8 @@ affect this separate path. They retain their meaning for the older tests.
 
 Reference correction fits one uniform global RGB transform to SCUNet alone,
 then applies it to the control and both candidates. It uses the reference
-checkbox but always uses a reliable global fit or leaves colors unchanged;
-Classic spatial correction is not used here. Thus its coefficients can differ
+checkbox, with a reliable paired global fit or the independent Global palette
+fallback; Classic spatial correction is not used here. Its coefficients can differ
 from **Compare SCUNet**, which fits colors to the classical comparator. No
 reference detail, grid or shading field is transferred. Repeating preparation
 can reuse the raw model output if the edited pixels still match, while
@@ -29,7 +46,7 @@ recomputing cleanup and colors. Changing inputs clears the active live cache.
 
 Use result zoom and pan to compare 0, 100 and 200. **Save PNG + timings** saves
 the displayed image and its actual applied strength. **Save live test** writes
-`scunet_cleanup_v221_<timestamp>` containing:
+`scunet_cleanup_v222_<timestamp>` containing:
 
 - `00_scunet_only.png`, with the common color correction and cleanup off.
 - `01_cleanup_100.png`, `02_cleanup_200.png` and `03_selected.png`.
