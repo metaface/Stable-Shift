@@ -90,6 +90,8 @@ def save_diagnostics(maps, directory, prefix=''):
     guide.save(directory/(prefix+'MAP_LEGEND.png'))
     note = '''# Diagnostic map meanings — V2.10 stroke cleanup
 
+- scunet_cleanup_signed_rgb: displayed SCUNet cleanup minus the model-only view, using the same frozen global color transform. Native int16 RGB; no source copy-back or line reconstruction contributes.
+- scunet_cleanup_change: mean absolute change / 16 for that focused pass. It is an applied-change map, not a noise probability or protection mask.
 - auto_luminance_strength / auto_chroma_strength: source-derived permission, 0–1, applied to each local/broad candidate correction before palette matching. These fields can reduce but never increase the requested cleanup. They are not noise probabilities.
 - auto_denoise_luminance_strength / auto_denoise_chroma_strength: permission applied to the guarded backend handoff. These allow a strong candidate in noisy colored interiors while retaining quieter gray structure elsewhere.
 - auto_bright_neutral_permission: extra permission for fine mottling in supported bright, low-chroma surfaces. It raises the backend/local/broad permission fields without changing selected backend settings or source cores. The exact cores remain excluded. It is not a sparkle/object detector, color correction or a noise probability.

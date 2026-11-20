@@ -1,4 +1,52 @@
-# Stable Shift V2.20 — standalone guide
+# Stable Shift V2.21 — standalone guide
+
+## SCUNet color cleanup
+
+Use **Prepare SCUNet cleanup** after optional SCUNet setup. The edited image
+goes through the full real-PSNR model once, followed by independent regular and
+strong color-averaging candidates. The result is displayed in the app. The live
+slider becomes **SCUNet cleanup %**: 0 shows the model-only control, 100 applies
+regular cleanup, and 200 applies stronger cleanup. Intermediate values blend
+fixed endpoints; they never repeat inference, refit colors or accumulate passes.
+
+The focused cleanup includes brightness variation as well as color because
+many remaining broad patches are changes in lightness. Similar nearby model
+colors are averaged with a recursive edge-aware filter at native resolution.
+Large color differences limit averaging, including at clean SCUNet lines and
+shade boundaries. It uses no hard protection map, region fill, raw source
+copy-back, classical denoiser, pyramid, stroke reconstruction or AA. The old
+denoiser, automatic-strength, local/broad and line/finishing controls do not
+affect this separate path. They retain their meaning for the older tests.
+
+Reference correction fits one uniform global RGB transform to SCUNet alone,
+then applies it to the control and both candidates. It uses the reference
+checkbox but always uses a reliable global fit or leaves colors unchanged;
+Classic spatial correction is not used here. Thus its coefficients can differ
+from **Compare SCUNet**, which fits colors to the classical comparator. No
+reference detail, grid or shading field is transferred. Repeating preparation
+can reuse the raw model output if the edited pixels still match, while
+recomputing cleanup and colors. Changing inputs clears the active live cache.
+
+Use result zoom and pan to compare 0, 100 and 200. **Save PNG + timings** saves
+the displayed image and its actual applied strength. **Save live test** writes
+`scunet_cleanup_v221_<timestamp>` containing:
+
+- `00_scunet_only.png`, with the common color correction and cleanup off.
+- `01_cleanup_100.png`, `02_cleanup_200.png` and `03_selected.png`.
+- `scunet_before_color.png`, the exact raw model output.
+- Full inputs, native comparison crops, a sheet and actual settings/timings.
+- `share_scunet_cleanup.zip` when the control, selected result and inputs fit
+  within 30 MiB; additional endpoints/crops are included as space allows.
+
+**Save maps** exports `scunet_cleanup_signed_rgb` (selected minus model-only,
+native int16 RGB) and `scunet_cleanup_change` (mean absolute change / 16). These
+show the applied correction, not a detected-noise probability. The raw arrays
+and applied report are saved alongside display previews.
+
+Cleanup uses contrast rather than semantic recognition. Strong settings can
+soften faint lines, small stars, smoke gradients and intentional texture. This
+is why the model-only endpoint stays available. Existing ordinary Run, Preserve
+Edits and earlier comparisons are retained. See [V2.21 checks](VALIDATION_V221.md).
 
 ## SCUNet comparison
 

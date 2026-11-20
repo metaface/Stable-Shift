@@ -39,7 +39,7 @@ def default_method():
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.20 — SCUNet Comparison')
+        root.title('Stable Shift V2.21 — SCUNet Color Cleanup')
         root.geometry('1400x980')
         root.minsize(1040, 820)
         self.images = {'clean': None, 'edited': None}
@@ -59,6 +59,8 @@ class App:
         self._line_generation = 0
         self._live_result = False
         self.line_strength = tk.DoubleVar(value=100)
+        self.live_strength_label = tk.StringVar(value='Line reconstruction %:')
+        self.live_help = tk.StringVar(value='Prepare once; then drag strength. 0 = traced preservation, 100 = smooth traced strokes, 200 = stronger smoothing. Short marks and filled shapes stay unfitted.')
         self.result_zoom = tk.StringVar(value='Fit')
         self.view_center = (.5, .5)
         self._view_box = None
@@ -168,8 +170,9 @@ class App:
         ttk.Label(strokes, text='100 applies the full candidate.').pack(side='left', padx=7)
         live = ttk.Frame(controls)
         live.pack(fill='x', pady=(5, 3))
+        ttk.Button(live, text='Prepare SCUNet cleanup', command=self.prepare_scunet_cleanup).pack(side='left', padx=7)
         ttk.Button(live, text='Prepare live pyramid', command=self.prepare_live_lines).pack(side='left', padx=7)
-        ttk.Label(live, text='Line reconstruction %:').pack(side='left', padx=5)
+        ttk.Label(live, textvariable=self.live_strength_label).pack(side='left', padx=5)
         ttk.Scale(live, variable=self.line_strength, from_=0, to=200).pack(side='left', fill='x', expand=True, padx=5)
         ttk.Spinbox(live, from_=0, to=200, increment=5, width=5, textvariable=self.line_strength).pack(side='left', padx=5)
         ttk.Button(live, text='Save live test', command=self.save_live_lines).pack(side='left', padx=7)
@@ -178,7 +181,7 @@ class App:
                             values=['Fit', '100%', '200%', '400%'])
         zoom.pack(side='left', padx=5)
         zoom.bind('<<ComboboxSelected>>', self.schedule_redraw)
-        ttk.Label(controls, text='Prepare once; then drag strength. 0 = traced preservation, 100 = smooth traced strokes, 200 = stronger smoothing. Short marks and filled shapes stay unfitted.').pack(anchor='w')
+        ttk.Label(controls, textvariable=self.live_help).pack(anchor='w')
         self.line_strength.trace_add('write', self.schedule_line_preview)
         self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
         ag = ttk.Frame(self.advanced)
@@ -570,7 +573,8 @@ class App:
             return
         directory = Path(parent)/datetime.now().strftime('scunet_test_v220_%Y%m%d_%H%M%S_%f')
         cached = self.line_preview
-        if cached is not None and cached.report['requested_options'] != asdict(opts):
+        if cached is not None and (cached.report.get('preview_kind') == 'scunet_cleanup'
+                                   or cached.report['requested_options'] != asdict(opts)):
             cached = None
         self.begin('Comparing full-strength SCUNet alone with the current live pyramid')
         def worker():
@@ -581,6 +585,32 @@ class App:
                 self.queue.put(('scunet_compared', (directory, summary)))
             except Exception as exc:
                 self.queue.put(('error', (str(exc), traceback.format_exc())))
+        Thread(target=worker, daemon=True).start()
+
+    def prepare_scunet_cleanup(self):
+        if self.busy:
+            return
+        if self.mode.get() != 'Restore Quality':
+            messagebox.showinfo('SCUNet cleanup', 'SCUNet cleanup is for Restore Quality.')
+            return
+        try:
+            clean, edited, opts = self.snapshot()
+            from .live_lines import validate_strength
+            validate_strength(self.line_strength.get())
+        except (ValueError, tk.TclError) as exc:
+            messagebox.showwarning('Inputs/settings', str(exc))
+            return
+        self._line_generation += 1
+        generation = self._line_generation
+        cached = self.line_preview
+        self.begin('Preparing SCUNet and color cleanup once; strength becomes live when ready')
+        def worker():
+            try:
+                from .scunet_cleanup import prepare_scunet_cleanup
+                preview = prepare_scunet_cleanup(clean, edited, opts, self.progress, cached=cached)
+                self.queue.put(('live_scunet_ready', (generation, preview)))
+            except Exception as exc:
+                self.queue.put(('live_scunet_error', (generation, str(exc), traceback.format_exc())))
         Thread(target=worker, daemon=True).start()
 
     def prepare_live_lines(self):
@@ -623,18 +653,29 @@ class App:
         try:
             out, report = self.line_preview.render(self.line_strength.get())
         except (ValueError, tk.TclError):
-            self.status.set('Line reconstruction needs a number from 0 to 200%. The previous result is retained.')
+            self.status.set('Live strength needs a number from 0 to 200%. The previous result is retained.')
             return
         self.result = out
         self._displayed_line_preview = self.line_preview
         self.maps = {'report': report}
         self.pre_antialias = self.post_color = None
         self._live_result = True
-        line = report['line_preservation']
-        self.result_info.set(f'Live pyramid | Line reconstruction {line["strength"]:.1f}% | '
-            f'Changed from traced 0% base: {line["changed_pixels_percent"]:.2f}% | '
-            f'Blend: {line["render_seconds"]*1000:.0f} ms | Drag the zoomed result to pan')
-        self.status.set('Live strength updated from cache. Denoising, pyramid and colors were not rerun. Other settings require Prepare live pyramid again.')
+        if 'scunet_cleanup' in report:
+            cleanup = report['scunet_cleanup']
+            self.live_strength_label.set('SCUNet cleanup %:')
+            self.live_help.set('SCUNet: 0 = model only, 100 = color cleanup, 200 = stronger cleanup. The slider reuses cached pixels. Old guards, pyramid, strokes and AA do not run.')
+            self.result_info.set(f'SCUNet | Color cleanup {cleanup["strength"]:.1f}% | '
+                f'Changed from model only: {cleanup["changed_pixels_percent"]:.2f}% | '
+                f'Blend: {cleanup["render_seconds"]*1000:.0f} ms | Drag the zoomed result to pan')
+            self.status.set('SCUNet cleanup updated from cache; the model, cleanup and colors were not rerun. Other settings require Prepare SCUNet cleanup again.')
+        else:
+            line = report['line_preservation']
+            self.live_strength_label.set('Line reconstruction %:')
+            self.live_help.set('Prepare once; then drag strength. 0 = traced preservation, 100 = smooth traced strokes, 200 = stronger smoothing. Short marks and filled shapes stay unfitted.')
+            self.result_info.set(f'Live pyramid | Line reconstruction {line["strength"]:.1f}% | '
+                f'Changed from traced 0% base: {line["changed_pixels_percent"]:.2f}% | '
+                f'Blend: {line["render_seconds"]*1000:.0f} ms | Drag the zoomed result to pan')
+            self.status.set('Live strength updated from cache. Denoising, pyramid and colors were not rerun. Other settings require Prepare live pyramid again.')
         self.schedule_redraw()
 
     def start_result_pan(self, event):
@@ -655,19 +696,24 @@ class App:
 
     def save_live_lines(self):
         if self.busy or self.line_preview is None or not self._live_result:
-            messagebox.showinfo('Save live test', 'Prepare a live pyramid first.')
+            messagebox.showinfo('Save live test', 'Prepare SCUNet cleanup or a live pyramid first.')
             return
         # Save the applied strength, even when a newer widget value is pending.
-        strength = self.maps['report']['line_preservation']['strength']
-        parent = filedialog.askdirectory(title='Save cached line-preservation test')
+        scunet = 'scunet_cleanup' in self.maps['report']
+        strength = self.maps['report']['scunet_cleanup' if scunet else 'line_preservation']['strength']
+        parent = filedialog.askdirectory(title='Save cached SCUNet cleanup test' if scunet else 'Save cached line-preservation test')
         if not parent:
             return
-        directory = Path(parent)/datetime.now().strftime('live_line_test_v219_%Y%m%d_%H%M%S_%f')
+        prefix = 'scunet_cleanup_v221_' if scunet else 'live_line_test_v219_'
+        directory = Path(parent)/datetime.now().strftime(prefix+'%Y%m%d_%H%M%S_%f')
         try:
-            from .live_lines import save_line_test
-            archive = save_line_test(self._displayed_line_preview, strength, directory,
-                                     self.images['edited'], self.images['clean'])
-            self.status.set('Live line test saved: '+str(archive or directory))
+            if scunet:
+                from .scunet_cleanup import save_scunet_cleanup_test as save_test
+            else:
+                from .live_lines import save_line_test as save_test
+            archive = save_test(self._displayed_line_preview, strength, directory,
+                               self.images['edited'], self.images['clean'])
+            self.status.set('Live test saved: '+str(archive or directory))
         except Exception as exc:
             messagebox.showerror('Save live test', str(exc))
 
@@ -789,7 +835,7 @@ class App:
                 if verified.returncode:
                     raise RuntimeError('SCUNet runtime installed but could not initialize. '+(verified.stderr or verified.stdout)[-1800:])
                 ensure_weights(progress=self.progress)
-                self.queue.put(('installed', 'SCUNet real-PSNR installed and weights verified. Restart, keep your usual denoiser selected, then choose Compare SCUNet.'))
+                self.queue.put(('installed', 'SCUNet real-PSNR installed and weights verified. Restart, then choose Prepare SCUNet cleanup or Compare SCUNet.'))
             except Exception as exc:
                 self.queue.put(('error', (str(exc), traceback.format_exc())))
         Thread(target=worker, daemon=True).start()
@@ -808,12 +854,12 @@ class App:
                 if kind == 'progress':
                     self.phase = data
                     continue
-                if kind in ('live_lines_ready', 'live_lines_error'):
+                if kind in ('live_lines_ready', 'live_lines_error', 'live_scunet_ready', 'live_scunet_error'):
                     if data[0] != self._line_generation:
                         continue
                     self.busy = False
                     self.started = None
-                    if kind == 'live_lines_ready':
+                    if kind.endswith('_ready'):
                         self.line_preview = data[1]
                         if self._line_job is not None:
                             self.root.after_cancel(self._line_job)
@@ -821,7 +867,7 @@ class App:
                         self.render_live_lines()
                     else:
                         self.status.set('Live preparation failed. The previous result is retained.')
-                        messagebox.showerror('Live lines', data[1])
+                        messagebox.showerror('SCUNet cleanup' if kind == 'live_scunet_error' else 'Live lines', data[1])
                     continue
                 self.busy = False
                 self.started = None

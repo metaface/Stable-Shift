@@ -1,6 +1,6 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.20** adds an optional **SCUNet** backend and a direct **Compare SCUNet** test. The accepted V2.19 pyramid/border/stroke processing stays available. SCUNet's dependencies and model are installed only when requested.
+Standalone cleanup and color restoration for Stable Diffusion outputs. **V2.21** adds **Prepare SCUNet cleanup**: full SCUNet output with a focused color-splotch pass and live strength control. The V2.20 model-only comparison and accepted pyramid/stroke method stay available. SCUNet's dependencies and model are installed only when requested.
 
 Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
 
@@ -9,6 +9,20 @@ Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited 
 For a Git checkout, close the app and pull the branch you are testing with Git Bash. Git handles tracked file removals; no cleanup script is needed. Keep using **START_Stable_Shift.bat**. The existing `.venv` is reused; this version adds no dependencies.
 
 For a fresh ZIP installation, extract into a new folder and use the Start launcher. It installs base requirements; optional CPU/GPU BM3D can be installed with the app buttons. For older installations updated by copying a ZIP over existing files, see [cleanup notes](docs/CLEANUP.md). `python app.py` remains supported.
+
+## SCUNet with live color cleanup
+
+After the optional SCUNet setup, load the usual images and press **Prepare SCUNet cleanup**. This runs the full model once and prepares two color-cleanup candidates. The live slider changes to **SCUNet cleanup %**:
+
+- **0%**: SCUNet alone.
+- **100%**: the default color cleanup, including the lightness variation responsible for many broad patches.
+- **200%**: stronger cleanup with a wider color-similarity range.
+
+Moving the slider blends fixed results immediately. It never reruns SCUNet or accumulates cleanup. Use the result zoom and drag to pan; **Save PNG + timings** saves the displayed native-size pixels. **Save live test** exports the model-only control, 100%, 200%, selected strength, full inputs and a share ZIP within 30 MiB. **Save maps** records exact signed cleanup changes.
+
+This path uses one edge-aware color-averaging pass on SCUNet's raw output. Its continuous color limits allow cleaning beside lines without a wide protected border. There is no source copy-back, old local/broad cleanup, region fill, pyramid or stroke reconstruction. Their controls do not affect this test. Both candidates start independently from SCUNet alone; the 200% candidate is not another pass over 100%.
+
+Reference correction, when enabled, fits one uniform global RGB transform to SCUNet alone and uses those same coefficients for every cleanup strength. Unlike the older **Compare SCUNet** control, it does not fit colors to the classical pipeline. An unreliable fit leaves source colors. The reference supplies no geometry or texture. Strong cleanup can soften genuine faint marks, gradients and texture; use the live zero control to judge that tradeoff. Repeating preparation can reuse a matching raw model result while refreshing cleanup and colors. See [V2.21 validation](docs/VALIDATION_V221.md).
 
 ## Try SCUNet on its own
 

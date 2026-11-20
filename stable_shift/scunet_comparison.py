@@ -15,11 +15,12 @@ from .scunet import denoise
 SHARE_LIMIT = 30*1024*1024
 
 
-def save_bundle(directory, report, crops):
+def save_bundle(directory, report, crops, *, required=None, optional=None,
+                report_name='scunet_settings_and_timings.json', archive_name='share_scunet_test.zip'):
     """Prioritize compared results and inputs; keep extras in the full folder."""
     directory = Path(directory)
-    required = ['01_current_pipeline.png', '02_scunet_only.png', 'edited_source.png', 'color_reference.png']
-    optional = ['scunet_before_color.png', '03_input_same_colors.png', 'scunet_comparison.jpg']+list(crops)
+    required = list(required) if required is not None else ['01_current_pipeline.png', '02_scunet_only.png', 'edited_source.png', 'color_reference.png']
+    optional = list(optional) if optional is not None else ['scunet_before_color.png', '03_input_same_colors.png', 'scunet_comparison.jpg']+list(crops)
     # Include the actual metadata size, with headroom for filenames, ZIP headers
     # and worst-case recompression of already compressed PNGs.
     base = {key: value for key, value in report.items() if not key.startswith('share_') and key != 'omitted_optional_files'}
@@ -34,12 +35,11 @@ def save_bundle(directory, report, crops):
             used += length
         else:
             omitted.append(name)
-    share_zip = 'share_scunet_test.zip' if sum((directory/name).stat().st_size for name in required) <= budget else None
+    share_zip = archive_name if sum((directory/name).stat().st_size for name in required) <= budget else None
     report.update(share_zip=share_zip, share_files=share if share_zip else [], omitted_optional_files=omitted,
                   share_required_files=required)
-    report_name = 'scunet_settings_and_timings.json'
     (directory/report_name).write_text(json.dumps(report, indent=2), encoding='utf-8')
-    archive_path = directory/'share_scunet_test.zip'
+    archive_path = directory/archive_name
     if share_zip:
         with ZipFile(archive_path, 'w', compression=ZIP_DEFLATED) as archive:
             for name in share+[report_name]:
