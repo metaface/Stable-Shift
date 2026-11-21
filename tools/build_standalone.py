@@ -21,5 +21,5 @@ def build_standalone(output, root=ROOT):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--out',type=Path,default=ROOT/'dist/Stable-Shift-v2.24.zip')
+    parser.add_argument('--out',type=Path,default=ROOT/'dist/Stable-Shift-v2.25.zip')
     print(build_standalone(parser.parse_args().out))

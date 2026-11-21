@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.24 — Automatic Restoration')
+        root.title('Stable Shift V2.25 — Automatic Restoration')
         root.geometry('1400x880')
         root.minsize(1000, 640)
         self.images = {'reference': None, 'edited': None}
@@ -300,7 +300,7 @@ class App:
         parent = filedialog.askdirectory(title='Save restoration test')
         if parent:
             try:
-                directory = Path(parent)/datetime.now().strftime('stable_shift_v224_%Y%m%d_%H%M%S_%f')
+                directory = Path(parent)/datetime.now().strftime('stable_shift_v225_%Y%m%d_%H%M%S_%f')
                 path = save_test(self.displayed_preview, self.result, self.report,
                     self.images['edited'], self.images['reference'], directory)
                 self.status.set('Saved test: '+str(path))

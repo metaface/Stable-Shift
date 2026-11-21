@@ -173,17 +173,32 @@ Both methods are scored on those same held-out colors, never cleanup strength.
     new_median, new_q80 = errors(model.apply(small))
     constant = np.empty_like(small)
     constant[:] = np.uint8(np.clip(np.median(y, axis=0)*255+.5, 0, 255))
-    constant_median, _ = errors(constant)
+    constant_median, constant_q80 = errors(constant)
+    # Corresponding pixels can still differ after an edit/generation. Judge
+    # the candidate against the actual alternatives on these held-out colors,
+    # rather than requiring it to explain half the error of a flat-color guess.
+    score = lambda median, q80: .65*median+.35*q80
+    classic_score = score(old_median, old_q80)
+    global_score = score(new_median, new_q80)
+    constant_score = score(constant_median, constant_q80)
+    tie_margin = max(.15, .02*classic_score)
+    tail_margin = max(2., .20*old_q80)
     report.update(classic_validation_median_delta_e=old_median,
                   classic_validation_q80_delta_e=old_q80,
                   global_validation_median_delta_e=new_median,
                   global_validation_q80_delta_e=new_q80,
-                  constant_validation_median_delta_e=constant_median)
-    if new_median > 8 or new_q80 > 16 or new_median > .5*constant_median:
-        return fallback('Paired colors do not support a reliable global mapping; retaining Classic.')
-    if new_median >= old_median*.98 or new_q80 > old_q80*1.02:
-        return fallback('Held-out colors do not improve sufficiently over Classic.')
-    report.update(selected_method='Robust global', reason='Bounded global fit improves held-out color agreement.')
+                  constant_validation_median_delta_e=constant_median,
+                  constant_validation_q80_delta_e=constant_q80,
+                  classic_validation_score=classic_score, global_validation_score=global_score,
+                  constant_validation_score=constant_score,
+                  classic_tie_margin=tie_margin, classic_tail_margin=tail_margin,
+                  selection_policy='Prefer a stable uniform fit when comparable to Classic; reject flat-color predictions and materially worse held-out errors.')
+    if global_score >= constant_score-max(.05, .01*constant_score):
+        return fallback('The global fit does not meaningfully beat a flat-color prediction; retaining Classic.')
+    if global_score > classic_score+tie_margin or new_q80 > old_q80+tail_margin:
+        return fallback('Held-out global color errors are materially worse than Classic; retaining Classic.')
+    report.update(selected_method='Robust global',
+                  reason='Stable global fit beats a flat-color prediction and matches or improves Classic on held-out colors.')
     return model, report
 
 
