@@ -1,22 +1,20 @@
-"""Stable Shift desktop app: color reference + edited image."""
-from dataclasses import asdict
+"""One restoration workflow with automatic strengths and optional overrides."""
 from datetime import datetime
-import importlib.util
-import json
 from pathlib import Path
 from queue import Queue, Empty
-import subprocess
-import sys
 from threading import Thread
 from time import perf_counter
-import traceback
+import subprocess
+import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-
 from PIL import Image, ImageTk, ImageOps
 
-from .engine import Options, restore_quality, preserve_edits
-from .image_inputs import drop_path, load_image
+from .pipeline import Options, prepare
+from .global_color import METHODS, color_method_label
+from .image_inputs import load_image, drop_path
+from .preview import result_view
+from .export import save_result, save_test
 
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES, COPY, REFUSE_DROP
@@ -27,255 +25,168 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def default_method():
-    if importlib.util.find_spec('bm3d_cupy') is not None:
-        return 'GPU BM3D'
-    if importlib.util.find_spec('bm3d') is not None:
-        return 'CPU BM3D'
-    return 'Region cleanup only'
-
-
 class App:
     def __init__(self, root, dnd_available=False, dnd_error=''):
         self.root = root
-        root.title('Stable Shift V2.8 — Bright Surface Cleanup')
-        root.geometry('1400x940')
-        root.minsize(1040, 760)
-        self.images = {'clean': None, 'edited': None}
-        self.paths = {}
-        self.result = None
-        self.maps = {}
+        root.title('Stable Shift V2.24 — Automatic Restoration')
+        root.geometry('1400x880')
+        root.minsize(1000, 640)
+        self.images = {'reference': None, 'edited': None}
+        self.paths, self.photos, self.canvases = {}, {}, {}
+        self.preview = self.displayed_preview = self.cache = None
+        self.result, self.report = None, {}
         self.queue = Queue()
         self.busy = False
+        self.generation = 0
         self.started = None
         self.phase = ''
-        self._redraw_job = None
-        self.dnd_available = dnd_available
-        self.dnd_error = dnd_error
-        self.mode = tk.StringVar(value='Restore Quality')
-        self.method = tk.StringVar(value=default_method())
-        self.theme = tk.StringVar(value='System')
-        self.palette = tk.BooleanVar(value=True)
-        self.source_guard = tk.BooleanVar(value=True)
+        self._redraw_job = self._render_job = None
+        self._view_box = self._drag_start = None
+        self.center = (.5, .5)
         self.automatic = tk.BooleanVar(value=True)
-        self.noise = tk.DoubleVar(value=100)
-        self.chroma = tk.DoubleVar(value=100)
-        self.cleanup = tk.DoubleVar(value=100)
-        self.blotch_strength = tk.DoubleVar(value=100)
-        self.cleanup_luma = tk.DoubleVar(value=100)
-        self.cleanup_range = tk.DoubleVar(value=12)
-        self.cleanup_radius = tk.IntVar(value=16)
-        self.hard = tk.DoubleVar(value=100)
-        self.soft = tk.DoubleVar(value=60)
-        self.shade = tk.DoubleVar(value=35)
-        self.edit = tk.DoubleVar(value=23)
-        self.advanced_visible = tk.BooleanVar(value=False)
-        self.status = tk.StringVar(value='Load or drop a color reference and an edited image. Cleanup is experimental.')
-        self.result_info = tk.StringVar(value='No result yet. Preview is scaled; comparison crops retain native pixels.')
-        self.file_info = tk.StringVar(value='Reference supplies colors only. All structural analysis uses the edited/denoised image.')
-
+        self.reference_enabled = tk.BooleanVar(value=True)
+        self.color_method = tk.StringVar(value='Robust global')
+        self.denoise = tk.DoubleVar(value=100)
+        self.deblotch = tk.DoubleVar(value=100)
+        self.color = tk.DoubleVar(value=100)
+        self.zoom = tk.StringVar(value='Fit')
+        self.theme = tk.StringVar(value='System')
+        self.status = tk.StringVar(value='Open an image and optionally a color reference. Automatic strengths are enabled.')
+        self.info = tk.StringVar(value='SCUNet denoising, deblotching and color correction')
+        self.files = tk.StringVar(value='A color reference is optional; the edited image supplies all geometry.')
+        self.dnd_available = dnd_available
         main = ttk.Frame(root, padding=10)
         main.pack(fill='both', expand=True)
         main.columnconfigure(0, weight=1)
-        main.rowconfigure(5, weight=1)
-        toolbar = ttk.Frame(main)
-        toolbar.grid(row=0, column=0, sticky='ew', pady=(0, 7))
+        main.rowconfigure(4, weight=1)
+        bar = ttk.Frame(main)
+        bar.grid(row=0, column=0, sticky='ew')
         self.open_buttons = {}
-        for key, label in [('clean', 'Open color reference'), ('edited', 'Open edited image')]:
-            button = ttk.Button(toolbar, text=label, command=lambda k=key: self.open_file(k))
+        for key, label in (('edited', 'Open image'), ('reference', 'Open color reference')):
+            button = ttk.Button(bar, text=label, command=lambda k=key: self.open_file(k))
             button.pack(side='left', padx=(0, 7))
             self.open_buttons[key] = button
-        ttk.Button(toolbar, text='Run / Preview', command=self.run).pack(side='right')
-        ttk.Button(toolbar, text='Compare auto', command=self.compare_auto).pack(side='right', padx=7)
-        ttk.Button(toolbar, text='Legacy manual', command=self.compare).pack(side='right', padx=7)
-        ttk.Button(toolbar, text='Save PNG + timings', command=self.save).pack(side='right', padx=7)
-        ttk.Button(toolbar, text='Save maps', command=self.save_maps).pack(side='right', padx=7)
-        ttk.Label(main, textvariable=self.file_info).grid(row=1, column=0, sticky='ew', pady=(0, 6))
-
-        controls = ttk.LabelFrame(main, text='Restore Quality', padding=8)
+        ttk.Button(bar, text='Clear reference', command=self.clear_reference).pack(side='left')
+        ttk.Button(bar, text='Run', command=self.run).pack(side='right')
+        ttk.Button(bar, text='Save PNG + settings', command=self.save).pack(side='right', padx=7)
+        ttk.Button(bar, text='Save test', command=self.save_bundle).pack(side='right', padx=7)
+        setup = ttk.Menubutton(bar, text='SCUNet setup')
+        menu = tk.Menu(setup, tearoff=False)
+        menu.add_command(label='NVIDIA GPU', command=lambda: self.install_scunet('nvidia'))
+        menu.add_command(label='CPU', command=lambda: self.install_scunet('cpu'))
+        setup.configure(menu=menu)
+        setup.pack(side='right', padx=7)
+        ttk.Label(main, textvariable=self.files).grid(row=1, column=0, sticky='ew', pady=7)
+        controls = ttk.LabelFrame(main, text='Restoration', padding=8)
         controls.grid(row=2, column=0, sticky='ew')
         row = ttk.Frame(controls)
         row.pack(fill='x')
-        ttk.Label(row, text='Denoiser:').pack(side='left')
-        ttk.Combobox(row, textvariable=self.method, state='readonly', width=22, values=[
-            'GPU BM3D', 'CPU BM3D', 'Region cleanup only', 'NLM', 'Boundary constrained', 'Color only'
-        ]).pack(side='left', padx=7)
-        ttk.Checkbutton(row, text='Automatic strength', variable=self.automatic).pack(side='left', padx=6)
-        ttk.Checkbutton(row, text='Reference color correction (last)', variable=self.palette).pack(side='left', padx=10)
-        ttk.Label(row, text='Theme:').pack(side='left', padx=(12, 0))
-        theme = ttk.Combobox(row, textvariable=self.theme, state='readonly', width=8, values=['System', 'Dark', 'Light'])
-        theme.pack(side='left', padx=6)
-        theme.bind('<<ComboboxSelected>>', lambda e: self.apply_theme())
-        ttk.Checkbutton(row, text='Advanced / legacy', variable=self.advanced_visible, command=self.show_advanced).pack(side='right')
-        grid = ttk.Frame(controls)
-        grid.pack(fill='x', pady=(7, 0))
-        self._scale(grid, 'Luminance denoise', self.noise, 0, 100, 0, 0)
-        self._scale(grid, 'Color denoise', self.chroma, 0, 100, 0, 1)
-        self._scale(grid, 'V2.1 local surface cleanup (0 = off)', self.cleanup, 0, 100, 0, 2)
-        self._scale(grid, 'Brightness cleanup (0 = chroma only)', self.cleanup_luma, 0, 100, 1, 0)
-        self._scale(grid, 'Color similarity range (LAB)', self.cleanup_range, 2, 40, 1, 1)
-        radius_frame = ttk.Frame(grid)
-        radius_frame.grid(row=1, column=2, sticky='ew', padx=6, pady=3)
-        ttk.Label(radius_frame, text='Local cleanup radius (pixels)').pack(anchor='w')
-        ttk.Spinbox(radius_frame, from_=2, to=32, width=7, textvariable=self.cleanup_radius).pack(side='left')
-        ttk.Label(radius_frame, text='  Full-resolution sampling').pack(side='left')
-        ttk.Checkbutton(controls, text='Trace source lines before denoising and protect them through cleanup', variable=self.source_guard).pack(anchor='w', pady=(5, 0))
-        broadrow = ttk.Frame(controls)
-        broadrow.pack(fill='x', pady=5)
-        self._scale(broadrow, 'Broad correction maximum (0 = off)', self.blotch_strength, 0, 100, 0, 0)
-        ttk.Label(broadrow, text='Sliders are ceilings in Auto. Compare auto holds the color correction field fixed.').grid(row=0, column=1, padx=10, sticky='w')
-        self.advanced = ttk.LabelFrame(main, text='Legacy denoiser guards / Preserve Edits (unchanged)', padding=7)
-        ag = ttk.Frame(self.advanced)
-        ag.pack(fill='x')
-        self._scale(ag, 'Hard edge guard (legacy denoisers)', self.hard, 0, 100, 0, 0)
-        self._scale(ag, 'Soft edge guard (legacy denoisers)', self.soft, 0, 100, 0, 1)
-        self._scale(ag, 'Original shading-boundary sensitivity', self.shade, 0, 100, 0, 2)
-        taskrow = ttk.Frame(self.advanced)
-        taskrow.pack(fill='x', pady=4)
-        ttk.Label(taskrow, text='Task:').pack(side='left')
-        ttk.Combobox(taskrow, textvariable=self.mode, state='readonly', width=18, values=['Restore Quality', 'Preserve Edits']).pack(side='left', padx=6)
-        ttk.Label(taskrow, text='Legacy edit sensitivity:').pack(side='left', padx=8)
-        ttk.Spinbox(taskrow, from_=3, to=90, textvariable=self.edit, width=5).pack(side='left')
-        ttk.Label(self.advanced, text='BM3D/NLM retain V1 edge blending. V2 surface sampling has its own internal boundary constraints.').pack(anchor='w')
-
-        installbar = ttk.Frame(main)
-        installbar.grid(row=4, column=0, sticky='ew', pady=7)
-        ttk.Button(installbar, text='Install CPU BM3D', command=lambda: self.install('bm3d==4.0.3')).pack(side='right', padx=4)
-        ttk.Button(installbar, text='Install GPU BM3D (CUDA 12)', command=lambda: self.install('bm3d-cupy[cuda12]==0.1.3')).pack(side='right', padx=4)
-        dnd_message = 'Drop one image onto each input panel (file paths with spaces are supported).'
-        if not dnd_available:
-            dnd_message = 'Drag/drop unavailable. Open buttons still work; see startup.log for the load error.'
-        self.dnd_label = ttk.Label(installbar, text=dnd_message)
-        self.dnd_label.pack(side='left')
-
+        ttk.Checkbutton(row, text='Automatic strengths', variable=self.automatic,
+                        command=self.toggle_automatic).pack(side='left')
+        ttk.Checkbutton(row, text='Use color reference', variable=self.reference_enabled).pack(side='left', padx=10)
+        ttk.Label(row, text='Color method:').pack(side='left')
+        ttk.Combobox(row, state='readonly', values=METHODS, textvariable=self.color_method, width=15).pack(side='left', padx=6)
+        ttk.Label(row, text='Result zoom:').pack(side='left', padx=(12, 0))
+        zoom = ttk.Combobox(row, state='readonly', values=('Fit', '100%', '200%', '400%'), textvariable=self.zoom, width=6)
+        zoom.pack(side='left', padx=6)
+        zoom.bind('<<ComboboxSelected>>', self.schedule_redraw)
+        theme = ttk.Combobox(row, state='readonly', values=('System', 'Dark', 'Light'), textvariable=self.theme, width=8)
+        theme.pack(side='right')
+        theme.bind('<<ComboboxSelected>>', self.apply_theme)
+        ttk.Label(controls, text='Run analyzes noise and surfaces. Color-method changes require Run; matching inference is reused.').pack(anchor='w', pady=(5, 0))
+        self.manual = ttk.Frame(main)
+        for column, (label, variable, maximum) in enumerate((('Denoise %', self.denoise, 100),
+                ('Deblotch %', self.deblotch, 200), ('Color correction %', self.color, 100))):
+            self.manual.columnconfigure(column, weight=1, uniform='manual')
+            frame = ttk.Frame(self.manual)
+            frame.grid(row=0, column=column, sticky='ew', padx=6)
+            ttk.Label(frame, text=label).pack(side='left')
+            ttk.Spinbox(frame, from_=0, to=maximum, increment=5, textvariable=variable, width=5).pack(side='right')
+            ttk.Scale(frame, variable=variable, from_=0, to=maximum).pack(fill='x', padx=6)
+        ttk.Label(self.manual, text='Deblotch/color update from cache. Denoise, reference or color-method changes require Run; matching SCUNet inference is reused.').grid(row=1, column=0, columnspan=3, sticky='w', pady=4)
+        self.deblotch.trace_add('write', self.schedule_render)
+        self.color.trace_add('write', self.schedule_render)
         previews = ttk.Frame(main)
-        previews.grid(row=5, column=0, sticky='nsew')
+        previews.grid(row=4, column=0, sticky='nsew', pady=8)
         previews.rowconfigure(0, weight=1)
-        self.canvases = {}
-        self.preview_frames = {}
-        self.photos = {}
-        for column, (key, title) in enumerate([
-            ('clean', 'COLOR REFERENCE — palette only'), ('edited', 'EDITED — image to clean'), ('result', 'RESULT')
-        ]):
+        for column, (key, title) in enumerate((('reference', 'COLOR REFERENCE (optional)'), ('edited', 'IMAGE'), ('result', 'RESULT'))):
             previews.columnconfigure(column, weight=1, uniform='preview')
             frame = ttk.LabelFrame(previews, text=title, padding=3)
             frame.grid(row=0, column=column, sticky='nsew', padx=3)
             canvas = tk.Canvas(frame, highlightthickness=0, width=200, height=220)
             canvas.pack(fill='both', expand=True)
             canvas.bind('<Configure>', self.schedule_redraw)
-            canvas.bind('<Double-Button-1>', lambda e, k=key: self.open_file(k) if k != 'result' else None)
             self.canvases[key] = canvas
-            self.preview_frames[key] = frame
-            if dnd_available and key != 'result':
-                for widget in (canvas, frame, self.open_buttons[key]):
-                    widget.drop_target_register(DND_FILES)
-                    widget.dnd_bind('<<Drop>>', lambda e, k=key: self.drop(e, k))
-        ttk.Label(main, textvariable=self.result_info, anchor='w').grid(row=6, column=0, sticky='ew', pady=(6, 2))
-        ttk.Label(main, textvariable=self.status, anchor='w', wraplength=1300).grid(row=7, column=0, sticky='ew')
+            if key == 'result':
+                canvas.bind('<ButtonPress-1>', self.start_pan)
+                canvas.bind('<B1-Motion>', self.pan)
+            else:
+                canvas.bind('<Double-Button-1>', lambda e, k=key: self.open_file(k))
+                if dnd_available:
+                    for widget in (canvas, frame, self.open_buttons[key]):
+                        widget.drop_target_register(DND_FILES)
+                        widget.dnd_bind('<<Drop>>', lambda e, k=key: self.drop(e, k))
+        ttk.Label(main, textvariable=self.info).grid(row=5, column=0, sticky='ew')
+        ttk.Label(main, textvariable=self.status, wraplength=1300).grid(row=6, column=0, sticky='ew', pady=(5, 0))
         self.apply_theme()
-        self.root.after(100, self.poll)
-        self.root.after(250, self.tick)
+        self.root.after(80, self.poll)
 
-    def _scale(self, parent, label, var, low, high, row, col):
-        frame = ttk.Frame(parent)
-        frame.grid(row=row, column=col, sticky='ew', padx=6, pady=3)
-        parent.columnconfigure(col, weight=1, uniform='controls')
-        line = ttk.Frame(frame)
-        line.pack(fill='x')
-        ttk.Label(line, text=label).pack(side='left')
-        text = tk.StringVar(value=f'{var.get():.0f}')
-        var.trace_add('write', lambda *args: text.set(f'{var.get():.0f}'))
-        ttk.Label(line, textvariable=text, width=4, anchor='e').pack(side='right')
-        ttk.Scale(frame, from_=low, to=high, variable=var).pack(fill='x', pady=2)
+    def options(self):
+        # In automatic mode unfinished manual widget edits cannot block Run.
+        values = {} if self.automatic.get() else dict(denoise=self.denoise.get(), deblotch=self.deblotch.get(), color=self.color.get())
+        return Options(automatic=self.automatic.get(), reference=self.reference_enabled.get(),
+                       color_method=self.color_method.get(), **values).validate()
 
-    def show_advanced(self):
-        if self.advanced_visible.get():
-            self.advanced.grid(row=3, column=0, sticky='ew', pady=6)
+    def toggle_automatic(self):
+        if self.automatic.get():
+            self.manual.grid_remove()
+            if self.preview is not None:
+                self.status.set('Automatic strengths selected. Press Run to analyze/apply them.')
         else:
-            self.advanced.grid_remove()
-        self.schedule_redraw()
-
-    def apply_theme(self):
-        dark = self.theme.get() != 'Light'
-        if self.theme.get() == 'System':
-            try:
-                import winreg
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') as key:
-                    dark = winreg.QueryValueEx(key, 'AppsUseLightTheme')[0] == 0
-            except (ImportError, OSError):
-                dark = True
-        colors = ('#202124', '#eceff4', '#363a40', '#151719') if dark else ('#eeeeee', '#17191c', '#d5d9df', '#dfe3e8')
-        if getattr(self, '_colors', None) == colors:
-            return
-        self._colors = colors
-        bg, fg, field, canvas_bg = colors
-        style = ttk.Style(self.root)
-        style.theme_use('clam')
-        style.configure('.', background=bg, foreground=fg, fieldbackground=field)
-        style.configure('TCombobox', fieldbackground=field, background=field, foreground=fg)
-        style.map('TCombobox', fieldbackground=[('readonly', field)], foreground=[('readonly', fg)], selectbackground=[('readonly', field)], selectforeground=[('readonly', fg)])
-        style.configure('TSpinbox', fieldbackground=field, foreground=fg, arrowcolor=fg)
-        style.map('TButton', background=[('active', field)], foreground=[('active', fg)])
-        style.configure('Horizontal.TScale', background=bg, troughcolor=field)
-        self.root.configure(background=bg)
-        self.root.option_add('*TCombobox*Listbox.background', field)
-        self.root.option_add('*TCombobox*Listbox.foreground', fg)
-        for canvas in self.canvases.values():
-            canvas.configure(background=canvas_bg)
-        self.schedule_redraw()
-
-    def schedule_redraw(self, event=None):
-        if self._redraw_job is not None:
-            self.root.after_cancel(self._redraw_job)
-        self._redraw_job = self.root.after(80, self.redraw)
-
-    def redraw(self):
-        self._redraw_job = None
-        for key, canvas in self.canvases.items():
-            canvas.delete('all')
-            width, height = max(80, canvas.winfo_width()), max(80, canvas.winfo_height())
-            image = self.result if key == 'result' else self.images[key]
-            if image is None:
-                label = 'Run a preview to see the result' if key == 'result' else 'Drop an image here\nor use Open above'
-                canvas.create_text(width / 2, height / 2, text=label, fill=self._colors[1], justify='center')
-                self.photos.pop(key, None)
-                continue
-            thumb = ImageOps.contain(image, (max(1, width - 8), max(1, height - 8)), Image.Resampling.LANCZOS)
-            self.photos[key] = ImageTk.PhotoImage(thumb)
-            canvas.create_image(width / 2, height / 2, image=self.photos[key])
-
-    def open_file(self, key):
-        if self.busy:
-            self.status.set('Finish the current operation before replacing an input image.')
-            return
-        parent = Path(self.paths[key]).parent if key in self.paths else None
-        path = filedialog.askopenfilename(initialdir=str(parent) if parent else None, filetypes=[
-            ('Images', '*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff'), ('All files', '*.*')])
-        if path:
-            self.set_image(key, path)
+            self.manual.grid(row=3, column=0, sticky='ew', pady=6)
+            if self.report:
+                for name in ('denoise', 'deblotch', 'color'):
+                    getattr(self, name).set(self.report['applied'][name])
 
     def set_image(self, key, path):
         if self.busy:
-            self.status.set('Finish the current operation before replacing an input image.')
             return False
         try:
             image = load_image(path)
         except Exception as exc:
             messagebox.showerror('Open image', str(exc))
             return False
-        self.images[key] = image
-        self.paths[key] = str(path)
-        self.result = None
-        self.maps = {}
-        self.file_info.set(' | '.join(f'{name}: {Path(value).name} ({self.images[name].width} x {self.images[name].height})' for name, value in self.paths.items()))
-        self.result_info.set('Input changed. Run again to create a result for this pair.')
-        self.status.set(f'Loaded {key}: {image.width} x {image.height}')
-        self.schedule_redraw()
+        self.images[key], self.paths[key] = image, str(path)
+        if key == 'edited':
+            self.cache = None
+        self.invalidate()
+        self.files.set(' | '.join(f'{k}: {Path(v).name} ({self.images[k].width} x {self.images[k].height})' for k,v in self.paths.items()))
         return True
+
+    def invalidate(self):
+        self.generation += 1
+        self.preview = self.displayed_preview = None
+        self.result, self.report = None, {}
+        self.center = (.5, .5)
+        self.status.set('Input changed. Press Run.')
+        self.schedule_redraw()
+
+    def clear_reference(self):
+        if not self.busy:
+            self.images['reference'] = None
+            self.paths.pop('reference', None)
+            self.invalidate()
+            self.files.set('Reference cleared; restoration can run without one.')
+
+    def open_file(self, key):
+        if self.busy:
+            return
+        path = filedialog.askopenfilename(filetypes=[('Images', '*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff'), ('All files', '*.*')])
+        if path:
+            self.set_image(key, path)
 
     def drop(self, event, key):
         if self.busy:
-            self.status.set('Finish the current operation before replacing an input image.')
             return REFUSE_DROP
         try:
             path = drop_path(self.root.tk, event.data)
@@ -284,32 +195,6 @@ class App:
             return REFUSE_DROP
         return COPY if self.set_image(key, path) else REFUSE_DROP
 
-    def opts(self):
-        return Options(method=self.method.get(), noise=self.noise.get(), color_noise=self.chroma.get(),
-                       hard_guard=self.hard.get(), soft_guard=self.soft.get(), shade_threshold=self.shade.get(),
-                       color_match=self.palette.get(), edit_sensitivity=self.edit.get(), cleanup=self.cleanup.get(),
-                       cleanup_range=self.cleanup_range.get(), cleanup_luma=self.cleanup_luma.get(),
-                       cleanup_radius=self.cleanup_radius.get(), source_guard=self.source_guard.get(),
-                       blotch_strength=self.blotch_strength.get(), auto_strength=self.automatic.get())
-
-    def snapshot(self):
-        if self.images['edited'] is None:
-            raise ValueError('Load an edited image first.')
-        if self.images['clean'] is None and (self.palette.get() or self.mode.get() == 'Preserve Edits'):
-            raise ValueError('Load a color reference, or turn reference color correction off.')
-        opts = self.opts()
-        from .region_cleanup import RegionOptions
-        RegionOptions(opts.cleanup, opts.cleanup_range, opts.cleanup_luma, opts.cleanup_radius).validated()
-        edited = self.images['edited'].copy()
-        clean = self.images['clean'].copy() if self.images['clean'] is not None else edited.copy()
-        return clean, edited, opts
-
-    def begin(self, phase):
-        self.busy = True
-        self.started = perf_counter()
-        self.phase = phase
-        self.status.set(phase)
-
     def progress(self, text):
         self.queue.put(('progress', text))
 
@@ -317,101 +202,54 @@ class App:
         if self.busy:
             return
         try:
-            clean, edited, opts = self.snapshot()
+            if self.images['edited'] is None:
+                raise ValueError('Open an image first.')
+            opts = self.options()
         except (ValueError, tk.TclError) as exc:
             messagebox.showwarning('Inputs/settings', str(exc))
             return
-        mode = self.mode.get()
-        self.begin('Preparing restoration')
+        source = self.images['edited'].copy()
+        reference = self.images['reference'].copy() if self.images['reference'] is not None else None
+        self.generation += 1
+        generation = self.generation
+        self.busy, self.started, self.phase = True, perf_counter(), 'Analyzing restoration'
+        self.status.set(self.phase)
+        cached = self.cache
         def worker():
             try:
-                if mode == 'Preserve Edits':
-                    start = perf_counter()
-                    out, maps = preserve_edits(clean, edited, opts)
-                    maps['report'] = {'backend': 'Legacy Preserve Edits', 'total_seconds': perf_counter() - start, 'options': asdict(opts)}
-                else:
-                    out, maps = restore_quality(clean, edited, opts, progress=self.progress)
-                self.queue.put(('result', (out, maps)))
+                prepared = prepare(reference, source, opts, self.progress, cached=cached)
+                self.queue.put(('ready', (generation, prepared)))
             except Exception as exc:
-                self.queue.put(('error', (str(exc), traceback.format_exc())))
+                self.queue.put(('failed', (generation, str(exc))))
         Thread(target=worker, daemon=True).start()
 
-    def compare(self):
-        if self.busy:
-            return
-        if self.mode.get() != 'Restore Quality':
-            messagebox.showinfo('Compare V2', 'Comparison is for Restore Quality; Preserve Edits is unchanged.')
+    def schedule_render(self, *args):
+        if self._render_job is None:
+            self._render_job = self.root.after(40, self.render_manual)
+
+    def render_manual(self):
+        self._render_job = None
+        if self.busy or self.preview is None or self.automatic.get():
             return
         try:
-            clean, edited, opts = self.snapshot()
-            from .comparison import comparison_plan, export_comparison
-            comparison_plan(opts)
-        except (ValueError, tk.TclError) as exc:
-            messagebox.showwarning('Inputs/settings', str(exc))
+            if self.denoise.get() != self.preview.report['prepared_strengths']['denoise'] or self.color_method.get() != self.preview.report['options']['color_method'] or self.reference_enabled.get() != self.preview.report['options']['reference']:
+                self.status.set('Denoise/reference/method changed. Press Run; matching model inference is reused.')
+                return
+            image, report = self.preview.render(self.deblotch.get(), self.color.get(), automatic=False)
+        except (ValueError, tk.TclError):
+            self.status.set('Enter valid strengths. The previous result is retained.')
             return
-        parent = filedialog.askdirectory(title='Choose parent folder for a new V2 comparison folder')
-        if not parent:
-            return
-        directory = Path(parent) / datetime.now().strftime('stable_shift_v2_%Y%m%d_%H%M%S_%f')
-        self.begin('Comparing V2 variants')
-        def worker():
-            try:
-                reports = export_comparison(clean, edited, opts, directory, self.progress)
-                self.queue.put(('compared', (directory, reports)))
-            except Exception as exc:
-                self.queue.put(('error', (str(exc), traceback.format_exc())))
-        Thread(target=worker, daemon=True).start()
+        self.display(self.preview, image, report)
 
-    def compare_auto(self):
-        if self.busy:
-            return
-        if self.mode.get() != 'Restore Quality':
-            messagebox.showinfo('Compare auto', 'This comparison is for Restore Quality.')
-            return
-        try:
-            clean, edited, opts = self.snapshot()
-        except (ValueError, tk.TclError) as exc:
-            messagebox.showwarning('Inputs/settings', str(exc))
-            return
-        parent = filedialog.askdirectory(title='Choose parent folder for a new automatic comparison')
-        if not parent:
-            return
-        directory = Path(parent) / datetime.now().strftime('auto_test_v28_%Y%m%d_%H%M%S_%f')
-        self.begin('Comparing manual and automatic strengths; backend settings are tested separately')
-        def worker():
-            try:
-                from .auto_comparison import export_auto_comparison
-                summary = export_auto_comparison(clean, edited, opts, directory, self.progress)
-                self.queue.put(('auto_compared', (directory, summary)))
-            except Exception as exc:
-                self.queue.put(('error', (str(exc), traceback.format_exc())))
-        Thread(target=worker, daemon=True).start()
-
-
-
-    def install(self, package):
-        if self.busy:
-            return
-        note = 'CPU BM3D publishes noncommercial license terms. ' if package.startswith('bm3d==') else 'Requires a compatible NVIDIA driver; CUDA downloads can be large. '
-        if not messagebox.askyesno('Install optional backend', note + '\nInstall ' + package + ' into this app\'s Python environment?'):
-            return
-        self.begin('Installing ' + package)
-        def worker():
-            try:
-                proc = subprocess.run([sys.executable, '-m', 'pip', 'install', package], capture_output=True, text=True, timeout=1200)
-                if proc.returncode:
-                    raise RuntimeError((proc.stderr or proc.stdout)[-2200:])
-                self.queue.put(('installed', package + ' installed. Select its backend from the dropdown.'))
-            except Exception as exc:
-                self.queue.put(('error', (str(exc), traceback.format_exc())))
-        Thread(target=worker, daemon=True).start()
-
-    def tick(self):
-        if self.busy and self.started is not None:
-            self.status.set(f'{self.phase} | {perf_counter() - self.started:.1f}s elapsed')
-        if self.theme.get() == 'System':
-            self.apply_theme()
-        self.root.after(250, self.tick)
+    def display(self, preview, image, report):
+        self.displayed_preview = preview
+        self.result, self.report = image, report
+        a = report['applied']
+        method = color_method_label(report['color_correction']) if a['color'] else 'Off'
+        mode = 'Automatic' if a['automatic'] else 'Manual'
+        self.info.set(f'{mode} | Denoise {a["denoise"]:g}% | Deblotch {a["deblotch"]:g}% | Color {a["color"]:g}% ({method})')
+        self.status.set('Ready. Zoom and drag the result to inspect it. Manual deblotch/color previews do not repeat model inference.')
+        self.schedule_redraw()
 
     def poll(self):
         try:
@@ -420,90 +258,149 @@ class App:
                 if kind == 'progress':
                     self.phase = data
                     continue
-                self.busy = False
-                self.started = None
-                if kind == 'result':
-                    self.result, self.maps = data
-                    report = self.maps['report']
-                    parts = [report['backend']]
-                    if report.get('automatic_strength', {}).get('enabled'):
-                        parts.append(self.auto_description(report['automatic_strength']))
-                    parts += [f'{key.removesuffix("_seconds")}: {value:.2f}s' for key, value in report.items() if key.endswith('_seconds')]
-                    self.result_info.set(' | '.join(parts))
-                    region = report.get('broad_normalization', report.get('region_cleanup', {}))
-                    self.status.set(f'Finished. Source lines protected {report.get("source_protected_pixels_percent", 0):.1f}% | Broad correction changed {region.get("changed_pixels_percent", 0):.1f}%; mean RGB change {region.get("mean_rgb_change", 0):.2f}/255. Compare native-resolution crops.')
-                    self.schedule_redraw()
-                elif kind == 'compared':
-                    directory, reports = data
-                    self.status.set('Comparison saved: ' + str(directory))
-                    self.result_info.set(' | '.join(f'{run["name"]}: {run["total_seconds"]:.2f}s' for run in reports))
-                elif kind == 'auto_compared':
-                    directory, summary = data
-                    share = ' | Share: '+summary['share_zip'] if summary['share_zip'] else ''
-                    self.status.set('Automatic comparison saved: '+str(directory)+share)
-                    self.result_info.set(f'Manual: {summary["manual"]["total_seconds"]:.2f}s | Auto: {summary["automatic"]["total_seconds"]:.2f}s | '+self.auto_description(summary['automatic']['automatic_strength']))
+                if kind in ('ready', 'failed'):
+                    if data[0] != self.generation:
+                        continue
+                    self.busy, self.started = False, None
+                    if kind == 'failed':
+                        self.status.set('Restoration failed; the previous result is retained.')
+                        messagebox.showerror('Restore', data[1])
+                        continue
+                    prepared = data[1]
+                    self.preview, self.cache = prepared, prepared.cache
+                    image, report = prepared.render()
+                    self.display(prepared, image, report)
                 elif kind == 'installed':
-                    self.status.set(data)
-                elif kind == 'error':
-                    self.status.set('Operation failed; no backend fallback was performed.')
-                    messagebox.showerror('Stable Shift', data[0] + '\n\n' + data[1][-1800:])
+                    self.busy, self.started = False, None
+                    self.status.set('SCUNet installed and weights verified. Restart the app.')
+                elif kind == 'install_error':
+                    self.busy, self.started = False, None
+                    self.status.set('SCUNet setup failed.')
+                    messagebox.showerror('SCUNet setup', data)
         except Empty:
             pass
-        self.root.after(100, self.poll)
-
-    @staticmethod
-    def auto_description(report):
-        if report.get('backend_skipped'):
-            fine = 'denoiser skipped'
-        elif report['effective_noise'] == 0 and report['effective_color_noise'] == 0:
-            fine = 'denoiser at backend minimum'
-        else:
-            fine = f'denoiser candidate L {report["effective_noise"]:.0f}, C {report["effective_color_noise"]:.0f}'
-        return f'Auto: {fine}; surface limits L {report["mean_luminance_surface_permission_percent"]:.0f}%, C {report["mean_chroma_surface_permission_percent"]:.0f}%'
+        if self.busy and self.started is not None:
+            self.status.set(f'{self.phase} | {perf_counter()-self.started:.1f}s')
+        self.root.after(80, self.poll)
 
     def save(self):
         if self.result is None:
-            messagebox.showinfo('Save', 'Run a preview first.')
             return
         path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG', '*.png')])
-        if not path:
-            return
-        try:
-            self.result.save(path)
-            Path(path).with_suffix('.settings.json').write_text(json.dumps(self.maps.get('report', {}), indent=2), encoding='utf-8')
-            self.status.set('Saved PNG and its actual settings/timings report.')
-        except Exception as exc:
-            messagebox.showerror('Save', str(exc))
+        if path:
+            try:
+                save_result(self.result, self.report, path)
+                self.status.set('Saved native PNG and actual applied settings.')
+            except Exception as exc:
+                messagebox.showerror('Save', str(exc))
 
-    def save_maps(self):
-        if not self.maps:
-            messagebox.showinfo('Maps', 'Run a preview first.')
+    def save_bundle(self):
+        if self.busy or self.result is None:
             return
-        directory = filedialog.askdirectory(title='Save diagnostic maps')
-        if not directory:
-            return
-        try:
-            from .stage_maps import save_diagnostics
-            count = save_diagnostics(self.maps, directory)
-            self.status.set(f'Saved {count} map previews, signed raw arrays and MAP_LEGEND.')
-        except Exception as exc:
-            messagebox.showerror('Save maps', str(exc))
+        parent = filedialog.askdirectory(title='Save restoration test')
+        if parent:
+            try:
+                directory = Path(parent)/datetime.now().strftime('stable_shift_v224_%Y%m%d_%H%M%S_%f')
+                path = save_test(self.displayed_preview, self.result, self.report,
+                    self.images['edited'], self.images['reference'], directory)
+                self.status.set('Saved test: '+str(path))
+            except Exception as exc:
+                messagebox.showerror('Save test', str(exc))
 
+    def install_scunet(self, accelerator):
+        if self.busy:
+            return
+        from .scunet import install_commands, ensure_weights
+        self.busy, self.started, self.phase = True, perf_counter(), 'Setting up SCUNet'
+        def worker():
+            try:
+                commands = install_commands(sys.executable, accelerator)
+                probe = 'import torch, torchvision'+("; assert torch.cuda.is_available(), 'CUDA is unavailable'" if accelerator == 'nvidia' else '')
+                checked = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, timeout=90)
+                for command in commands[1:] if checked.returncode == 0 else commands:
+                    process = subprocess.run(command, capture_output=True, text=True, timeout=1800)
+                    if process.returncode:
+                        raise RuntimeError((process.stderr or process.stdout)[-2000:])
+                verified = subprocess.run([sys.executable, '-c', probe+'; import spandrel'], capture_output=True, text=True, timeout=90)
+                if verified.returncode:
+                    raise RuntimeError((verified.stderr or verified.stdout)[-2000:])
+                ensure_weights(progress=self.progress)
+                self.queue.put(('installed', None))
+            except Exception as exc:
+                self.queue.put(('install_error', str(exc)))
+        Thread(target=worker, daemon=True).start()
+
+    def apply_theme(self, event=None):
+        dark = self.theme.get() != 'Light'
+        if self.theme.get() == 'System':
+            try:
+                import winreg
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') as key:
+                    dark = winreg.QueryValueEx(key, 'AppsUseLightTheme')[0] == 0
+            except (ImportError, OSError):
+                pass
+        self._colors = ('#202124', '#eceff4', '#363a40', '#151719') if dark else ('#eeeeee', '#17191c', '#d5d9df', '#dfe3e8')
+        bg, fg, field, canvas_bg = self._colors
+        style = ttk.Style(self.root)
+        style.theme_use('clam')
+        style.configure('.', background=bg, foreground=fg, fieldbackground=field)
+        style.map('TCombobox', fieldbackground=[('readonly', field)], foreground=[('readonly', fg)], selectbackground=[('readonly', field)], selectforeground=[('readonly', fg)])
+        style.configure('TSpinbox', fieldbackground=field, foreground=fg, arrowcolor=fg)
+        style.map('TButton', background=[('active', field)], foreground=[('active', fg)])
+        self.root.configure(background=bg)
+        for canvas in self.canvases.values():
+            canvas.configure(background=canvas_bg)
+        self.schedule_redraw()
+
+    def schedule_redraw(self, event=None):
+        if self._redraw_job is None:
+            self._redraw_job = self.root.after(30, self.redraw)
+
+    def redraw(self):
+        self._redraw_job = None
+        for key, canvas in self.canvases.items():
+            canvas.delete('all')
+            width, height = max(80, canvas.winfo_width()), max(80, canvas.winfo_height())
+            image = self.result if key == 'result' else self.images[key]
+            if image is None:
+                canvas.create_text(width/2, height/2, text='Run to restore' if key == 'result' else 'Drop an image here\nor use Open', fill=self._colors[1], justify='center')
+                self.photos.pop(key, None)
+                continue
+            if key == 'result':
+                thumb, self._view_box = result_view(image, (width-8, height-8), self.zoom.get(), self.center)
+            else:
+                thumb = ImageOps.contain(image, (width-8, height-8), Image.Resampling.LANCZOS)
+            self.photos[key] = ImageTk.PhotoImage(thumb)
+            canvas.create_image(width/2, height/2, image=self.photos[key])
+
+    def start_pan(self, event):
+        if self.result is None or self.zoom.get() == 'Fit' or self._view_box is None:
+            return
+        left, top, right, bottom = self._view_box
+        self._drag_start = event.x, event.y, ((left+right)/(2*self.result.width), (top+bottom)/(2*self.result.height))
+
+    def pan(self, event):
+        if self._drag_start is None or self.result is None or self.zoom.get() == 'Fit':
+            return
+        x, y, center = self._drag_start
+        scale = float(self.zoom.get().removesuffix('%'))/100
+        self.center = (max(0, min(1, center[0]-(event.x-x)/(scale*self.result.width))),
+                       max(0, min(1, center[1]-(event.y-y)/(scale*self.result.height))))
+        self.schedule_redraw()
 
 
 def main():
-    error = ''
-    available = False
     root = tk.Tk()
+    available, error = False, ''
     try:
         if TkinterDnD is None:
-            raise ImportError('tkinterdnd2 is not installed. Relaunch through START_Stable_Shift.bat to install V2 dependencies.')
+            raise ImportError('tkinterdnd2 unavailable; restart using START_Stable_Shift.bat.')
         TkinterDnD.require(root)
         available = True
-    except (ImportError, tk.TclError, RuntimeError) as exc:
+    except (ImportError, RuntimeError, tk.TclError) as exc:
         error = str(exc)
         try:
-            (ROOT / 'startup.log').write_text(error, encoding='utf-8')
+            (ROOT/'startup.log').write_text(error, encoding='utf-8')
         except OSError:
             pass
     App(root, available, error)

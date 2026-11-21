@@ -1,26 +1,29 @@
 # Stable Shift
 
-Standalone cleanup and color restoration for Stable Diffusion outputs. This layout retains the accepted **V2.8 image processing**.
+**V2.24** keeps one restoration workflow: image analysis, SCUNet denoising, deblotching and reference color correction. Automatic strengths are on by default. Manual overrides are optional.
 
-Double-click **START_Stable_Shift.bat**. Load or drop your reference and edited image, then use Run / Preview. Automatic strength starts enabled; source geometry always comes from the edited image. The reference supplies colors only.
+Close the app, update your Git checkout, then double-click **START_Stable_Shift.bat**. Git removes the retired tracked scripts; your existing `.venv`, model cache and images remain in place. A fresh ZIP should be extracted into a new folder.
 
-## Updating an existing folder
+1. Open or drop the image to restore.
+2. Optionally open a color reference.
+3. Leave **Automatic strengths** enabled and press **Run**.
 
-1. Close the app, then copy the contents of the extracted update into your existing app folder, beside its current `app.py`, so its `.venv` stays available.
-2. Run **CLEANUP_OLD_FILES.bat** once. It moves known old root scripts and launchers into `_legacy_backup/<timestamp>/`, with an exact file manifest. Your installed environment, images, outputs and unrecognized custom files stay in place.
-3. Start the app with **START_Stable_Shift.bat** from now on. `python app.py` remains supported.
+The result bar shows the actual strengths and color method. **Save PNG + settings** writes the native image and applied settings. **Save test** exports the inputs, result and analysis, with a share ZIP within 30 MiB when possible.
 
-For a fresh installation, extract into a new folder and use the Start launcher. It installs the base requirements; optional CPU/GPU BM3D can be installed with the existing app buttons.
+## Automatic and manual control
 
-## Where the files live
+Analysis estimates fine scatter and remaining surface variation. It can skip denoising on quiet inputs, use full SCUNet on noisy ones, and choose stronger deblotching for textured bright surfaces. These measurements select amounts of the accepted operations; they do not paint protected borders or restore source noise around lines. Intentional texture can affect the estimate.
 
-| Location | Purpose |
-| --- | --- |
-| `stable_shift/` | Active app, denoisers, automatic control, source protection, palette/edit processing and exports |
-| `docs/` | User guide and cleanup notes; source checkouts also include processing validation |
-| `tests/` | Regression and desktop integration checks in the source checkout |
-| `tools/` | Optional maintenance; source checkouts also include historical comparison/replay tools and the ZIP builder |
+Uncheck **Automatic strengths** to expose **Denoise 0–100%**, **Deblotch 0–200%**, and **Color correction 0–100%**. Manual values start at the applied automatic settings. Deblotch and color update from cached pixels. Denoise or color-method changes require Run, reusing matching SCUNet inference.
 
-The two `difference_guard_*` modules inside `stable_shift/` are active color/Edit replacement dependencies. Historical line/blotch comparison wrappers have been removed from the desktop app; the corresponding developer tools remain outside the runtime package. The visible Legacy manual comparison and Preserve Edits remain available.
+**Robust global** is the default color method, with an explicitly reported **Classic** fallback. Classic remains selectable. Robust now evaluates color mixing relative to overall exposure, allowing legitimate strong darkening/brightening. It still validates color agreement; a different composition can require Classic. The experimental Global palette transfer has been removed.
 
-See the [user guide](docs/STANDALONE.md) for controls, themes, drag/drop and diagnostics, or [cleanup notes](docs/CLEANUP.md) for maintenance and developer commands.
+## SCUNet setup
+
+Existing SCUNet installations are reused. For a new installation, use **SCUNet setup → NVIDIA GPU** or **CPU**, then restart. The official real-PSNR model is downloaded and checksum verified in `models/`. Optional PyTorch/Spandrel remain separate from base dependencies and the small standalone ZIP. CPU inference can take minutes on large images.
+
+## Current scope
+
+BM3D/NLM, source guards, pyramid/line reconstruction, antialiasing, Preserve Edits, old comparison buttons/scripts, historical validation files and their unused tests have been removed from this branch. Existing Git history retains prior versions. No new halo-repair operation is included.
+
+See [the user guide](docs/STANDALONE.md) and [focused validation](docs/VALIDATION.md). Core processing is available separately from Tk through `stable_shift.pipeline` for later Forge integration.
