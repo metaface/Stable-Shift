@@ -1,64 +1,23 @@
-# V2.8 processing validation
+# V2.24 focused validation
 
-These are the accepted processing checks from before the file reorganization. Layout, packaging and migration checks are documented in [CLEANUP.md](CLEANUP.md).
+Only the retained path is tested: automatic analysis, SCUNet integration, deblotching, reference color, cached manual previews, exports and the desktop flow. Historical BM3D, Edit, line reconstruction and AA tests are removed with their unused code.
 
-## Issue and narrow change
+The small retained suite has ten focused checks. It covers exposure-aware fitting at 0.1× and 6×, rejection of unrelated color fits, quiet/noisy/gradient analysis, exact quiet-image preservation without loading optional model dependencies, model reuse gated by pixel signatures, reversible cached blending, actual applied saves/share inputs, absence of retired modules, and desktop automatic/manual/failure/stale-worker behavior. Linux/Xvfb was used; Windows/CUDA execution is unavailable here.
 
-The supplied beach comparison shows remaining gray/blue speckling around sparkle details in Auto, while maximum manual processing is preferred. V2.7 already selected luminance 100 and chroma 28.68577, so this was not another skipped-backend case. On free pixels in three sparkle crops, median luminance permission was only about 3–5%. The colored-variation requirement and extra automatic fade suppressed much of the available brightness correction.
+Cached actual 2048×2048 SCUNet outputs are reused for the cabin, beach and alley. The unchanged inference implementation is not repeatedly rerun for a color/cleanup refactor. Accepted manual cleanup endpoints at 0, 100 and 200 remain pixel-identical. The extracted Classic fitter also matches the earlier accepted Classic output exactly, despite removal of its old Edit-engine dependency.
 
-V2.8 adds extra local permission for fine texture within a broadly supported bright, low-chroma surface. Source lightness/chroma, neighborhood support and fine-scale luminance scatter produce a bounded 0–1 cue. It raises the existing luminance/chroma permission fields for the backend handoff and both surface stages. It does not alter backend settings, source cores, palette matching or a restoration filter. Exact source cores and the retained filters' barriers still apply.
+Automatic recommendations on those fixtures are:
 
-## Retained behavior
-
-V2.7's candidate estimator is evaluated before the new cue. Its fine/multiscale estimates and selected denoiser values remain unchanged. The same exact source-line mask is used. Local and broad cleanup, palette/core modules, input loader, requirements and source tracing files remain byte-identical to V2.7. CPU/GPU BM3D implementations and manual behavior are retained.
-
-On both supplied alley and cabin sources, the new cue is exactly zero. All existing automatic fields and effective options matched V2.7. Full-resolution cached-candidate replays also matched the previous actual CPU outputs byte-for-byte, including the cabin's final color correction: zero changed pixels in each image. This is stronger than checking an average permission value; these accepted examples follow the same processing path.
-
-## Full-resolution beach comparison
-
-The original source matches the earlier 2048×2048 beach source byte-for-byte. An actual CPU BM3D candidate was computed at the selected V2.7 settings, L=100 and C=28.6857693. That exact candidate was held fixed for old/new stage replays. Each replay verified the original RGB and exact backend arguments before accepting the cached candidate. Disabling only the new cue reproduced the original actual V2.7 CPU output byte-for-byte.
-
-Both old and new results then received the same exact frozen palette field fitted to the retained maximum-manual CPU local baseline using the supplied reference. No reference geometry guides the new cue. Native crops of upper-body sparkles, torso, thigh, face and crystal details were inspected. V2.8 visibly clears much more of the mottled texture and approaches the preferred manual appearance, while some soft glow/texture remains.
-
-| Full-resolution check | Result |
-| --- | --- |
-| Selected backend strengths changed | No |
-| Extra cue active on beach | 491,126 pixels, 11.71% |
-| Mean extra beach permission | 9.22% |
-| Original protected RGB pixels changed before palette | 0 |
-| Common protected RGB changes after the shared palette | 0 |
-| Actual processing residuals sum exactly to output change | Yes |
-| Alley final RGB changed in replay | 0 pixels |
-| Cabin final RGB changed in replay | 0 pixels |
-
-The active area and mean permission are weights/coverage, not percentages of noise removed. Candidate reuse isolates the permission change; replay timings are not backend performance benchmarks. GPU execution remains unverified here.
-
-## Closeness to the supplied manual example
-
-The following measurements exclude source-core pixels and compare native pre-palette RGB with the supplied maximum-manual GPU result. The old/new automatic replay uses the same actual CPU candidate. This is distance to the user's preferred example, not a ground-truth noise score or a CPU/GPU equivalence claim.
-
-| Sparkle crop | V2.7 mean absolute RGB gap | V2.8 gap | Remaining gap / V2.7 |
+| Image | Denoise | Deblotch | Color |
 | --- | ---: | ---: | ---: |
-| Upper body, x690–1049 y620–849 | 2.259 | 0.500 | 0.221 |
-| Torso, x830–1139 y830–1039 | 1.858 | 0.660 | 0.355 |
-| Thigh, x520–849 y1000–1249 | 2.146 | 0.570 | 0.266 |
+| Cabin | 100 | 100 | 100 |
+| Beach | 100 | 200 | 100 |
+| Alley | 100 | 85 | 0 (reference disabled in this fixture) |
 
-The substantially smaller gaps agree with the visible cleanup. They do not establish perfect sparkle preservation or semantic recognition of halos. Exact protected-pixel retention does not by itself prove unchanged contrast in every untraced detail.
+The original warm alley reference remains available only inline in the conversation. Classic extraction is instead compared with a clearly labeled controlled dark-reference result. This is not an exact replay of that original reference pair.
 
-## Automated checks
+Robust fitting now factors a positive fitted exposure scale out of its singular-value checks. Relative channel mixing, determinant, conditioning, held-out agreement and comparison with a constant-color prediction still constrain acceptance. Strong darkening alone no longer fails the fixed minimum-gain check. The model's actual coefficients are not changed when an existing fit already passes.
 
-**80 tests passed, 1 skipped** under a real Linux Tk display. The skip is an unavailable historical image fixture. Existing tests include actual CPU BM3D, the native Compare auto button, drag/drop slots, themes, run-setting persistence, fine/correlated-noise reduction and signed stage accounting.
+Automatic analysis is a heuristic, not semantic certainty about texture. Fine scatter sets denoise blending. Medium-scale variation outside strong/coherent edges sets regular deblotching; supported bright fine texture can raise its recommendation toward 200. Color fitting is evaluated on the denoised baseline and frozen across manual cleanup previews. No wide source protection, dirty-border copy-back, new line fitter, or experimental halo painting is applied.
 
-New checks cover:
-
-- Extra permission for bright neutral fine texture, with exact exclusion of protected pixels.
-- Zero extra permission for dark neutral and bright saturated controls.
-- Unchanged backend strengths and honoring zero cleanup stages even when the cue is active.
-- More than 50% MSE reduction against a known clean bright-gray surface using retained surface cleanup alone.
-- A clean bright gradient remaining byte-identical over three automatic passes.
-
-The accepted V2.4 manual regression also matched output RGB and source mask byte-for-byte. No dependency, neural model, color estimator, line smoothing, edit-replacement or Forge integration change is included.
-
-## Limits
-
-This is a local heuristic for bright near-neutral surfaces, not a sparkle detector or semantic noise classifier. Intentional fine gray texture on such surfaces may be softened, and some diffuse glow/mottling may remain. Dark gray detail retains the existing conservative behavior. GPU and Windows Explorer end-to-end execution are not available in this Linux environment; their paths remain unchanged.
+The simplified UI was inspected at its normal and minimum window sizes. The standalone package contains only the current runtime and short user documentation. Optional model weights and test images are excluded. Git updates remove retired tracked files while leaving ignored user data/model caches in place.

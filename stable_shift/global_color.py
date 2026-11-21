@@ -11,10 +11,53 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-from .frozen_palette import freeze_palette
+METHODS = ('Robust global', 'Classic')
 
 
-METHODS = ('Classic', 'Robust global', 'Global palette')
+@dataclass
+class ClassicColor:
+    correction: np.ndarray
+
+    def apply(self, rgb):
+        if rgb.shape != self.correction.shape:
+            raise ValueError('Classic correction and target dimensions must match.')
+        output = np.empty_like(rgb)
+        for top in range(0, len(rgb), 256):
+            lab = _lab(rgb[top:top+256])+self.correction[top:top+256]
+            lab[..., 0] = np.clip(lab[..., 0], 0, 100)
+            lab[..., 1:] = np.clip(lab[..., 1:], -127, 127)
+            value = cv2.cvtColor(lab.astype(np.float32), cv2.COLOR_LAB2RGB)
+            output[top:top+256] = np.uint8(np.clip(value, 0, 1)*255+.5)
+        return output
+
+
+def freeze_palette(reference, baseline_rgb):
+    """The accepted Classic LAB fit, extracted from the removed Edit engine."""
+    image = Image.fromarray(baseline_rgb)
+    reference = reference.convert('RGB')
+    if reference.size != image.size:
+        reference = reference.resize(image.size, Image.Resampling.LANCZOS)
+    factor = min(1., 1280/max(image.size))
+    size = tuple(max(16, round(v*factor)) for v in image.size)
+    ref = _lab(np.asarray(reference.resize(size, Image.Resampling.LANCZOS)))
+    source = _lab(np.asarray(image.resize(size, Image.Resampling.LANCZOS)))
+    shifts = ref-source
+    guess = np.median(shifts.reshape(-1, 3), axis=0).astype(np.float32)
+    residual = np.linalg.norm(shifts-guess, axis=2)
+    weight = residual <= max(8., float(np.percentile(residual, 65)))
+    if weight.sum() < 100:
+        weight[:] = True
+    a, b = ref[weight], source[weight]
+    offset = np.median(a-b, axis=0).astype(np.float32)
+    gain = np.ones(3, np.float32)
+    for channel in range(3):
+        current = max(1., float(np.percentile(b[:, channel], 75)-np.percentile(b[:, channel], 25)))
+        target = max(1., float(np.percentile(a[:, channel], 75)-np.percentile(a[:, channel], 25)))
+        gain[channel] = np.clip(target/current, .60, 1.65)
+    correction = np.broadcast_to(offset, source.shape).copy()
+    correction += (source-np.median(b, axis=0))*(gain-1)*.90
+    correction = np.clip(correction, -90, 90)
+    return ClassicColor(cv2.resize(correction, image.size, interpolation=cv2.INTER_LINEAR))
 
 
 @dataclass(frozen=True)
@@ -108,8 +151,15 @@ Both methods are scored on those same held-out colors, never cleanup strength.
     singular = np.linalg.svd(model.matrix, compute_uv=False)
     report.update(matrix=model.matrix.tolist(), source_pivot=model.source_pivot.tolist(),
                   reference_pivot=model.reference_pivot.tolist(), singular_values=singular.tolist())
-    if (np.linalg.det(model.matrix) <= 0 or singular[-1] < .25 or
-            singular[0] > 4 or singular[0]/singular[-1] > 8):
+    determinant = float(np.linalg.det(model.matrix))
+    exposure = float(np.cbrt(determinant)) if determinant > 0 else 0.
+    normalized = singular/max(exposure, 1e-12)
+    report.update(exposure_scale=exposure,
+                  exposure_normalized_singular_values=normalized.tolist())
+    # Judge color mixing relative to the fitted overall exposure. Uniform
+    # darkening/brightening must not itself be classified as color collapse.
+    if (not np.isfinite(model.matrix).all() or determinant <= 0 or exposure < 1e-6 or
+            normalized[-1] < .25 or normalized[0] > 4 or singular[0]/singular[-1] > 8):
         return fallback('Fit would collapse, invert, or excessively amplify color channels.')
     # Resize the exact Classic baseline output so the comparator includes its
     # inherited interpolated-field behavior rather than a different small fit.
@@ -137,64 +187,20 @@ Both methods are scored on those same held-out colors, never cleanup strength.
     return model, report
 
 
-def fit_global_palette(reference, baseline_rgb):
-    """Explicit overall RGB palette transfer, independent of object positions."""
-    def statistics(image):
-        small = np.asarray(ImageOps.contain(image.convert('RGB'), (384, 384),
-                           Image.Resampling.LANCZOS), dtype=np.float64)/255
-        samples = small.reshape(-1, 3)
-        low, high = np.percentile(samples, [2, 98], axis=0)
-        trimmed = np.clip(samples, low, high)
-        return trimmed.mean(axis=0), trimmed.std(axis=0)
 
-    source_pivot, source_spread = statistics(Image.fromarray(baseline_rgb))
-    reference_pivot, reference_spread = statistics(reference)
-    # A nearly constant channel still receives the reference offset without
-    # dividing by an unobserved spread or discarding the user's lighting.
-    gain = np.clip(reference_spread/np.maximum(source_spread, 1/255), .05, 4)
-    gain[source_spread < 1/255] = 1
-    model = GlobalColor(np.diag(gain), source_pivot, reference_pivot)
-    return model, {'requested_method': 'Global palette', 'selected_method': 'Global palette',
-        'reason': 'Global palette selected; independent RGB statistics transfer overall brightness and color.',
-        'color_space': 'RGB',
-        'matrix': model.matrix.tolist(), 'source_pivot': source_pivot.tolist(),
-        'reference_pivot': reference_pivot.tolist(), 'channel_gains': gain.tolist(),
-        'source_channel_spread': source_spread.tolist(),
-        'reference_channel_spread': reference_spread.tolist(),
-        'spatial_reference_transfer': False,
-        'note': 'A composition-independent style transfer, not semantic matching of objects. New or differently sized colored objects can influence global statistics.'}
-
-
-def fit_reference_color(reference, baseline_rgb, *, method='Classic', enabled=True,
-                        classic_baseline=None):
-    """Shared method selection for normal Run and the SCUNet preview.
-
-    Classic uses the existing LAB matcher. Robust global retains its validated
-    Classic fallback, now reported explicitly. Global palette is opt-in rather
-    than a hidden replacement for either selected method. The optional Classic
-    baseline preserves normal Run's pre/post-broad fitting convention.
-    """
+def fit_reference_color(reference, baseline_rgb, *, method='Robust global', enabled=True):
     if method not in METHODS:
         raise ValueError('Unknown color method: '+str(method))
-    if not enabled:
+    if not enabled or reference is None:
         return None, {'requested_method': method, 'selected_method': 'Off',
-                      'reason': 'Reference correction disabled.'}
-    baseline = baseline_rgb if classic_baseline is None else classic_baseline
+                      'reason': 'No active color reference.'}
     if method == 'Classic':
-        return freeze_palette(reference, baseline), {'requested_method': method,
+        return freeze_palette(reference, baseline_rgb), {'requested_method': method,
             'selected_method': method, 'reason': 'Classic LAB correction selected.'}
-    if method == 'Global palette':
-        return fit_global_palette(reference, baseline_rgb)
     transform, report = fit_global_color(reference, baseline_rgb)
     if report['selected_method'] == 'Classic':
-        if classic_baseline is not None:
-            transform = freeze_palette(reference, classic_baseline)
         report = dict(report, fallback_from=method, fallback_reason=report['reason'])
     return transform, report
-
-
-def fit_scunet_color(reference, baseline_rgb, *, method='Classic', enabled=True):
-    return fit_reference_color(reference, baseline_rgb, method=method, enabled=enabled)
 
 
 def color_method_label(report):

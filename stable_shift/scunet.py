@@ -82,7 +82,7 @@ def _dependencies():
         import torch
         from spandrel import ImageModelDescriptor, ModelLoader
     except (ImportError, RuntimeError, OSError) as exc:
-        raise RuntimeError('SCUNet needs optional PyTorch/Spandrel. Use Install SCUNet CPU or NVIDIA, then restart the app. Details: '+str(exc)) from exc
+        raise RuntimeError('SCUNet needs optional PyTorch/Spandrel. Use SCUNet setup (CPU or NVIDIA GPU), then restart the app. Details: '+str(exc)) from exc
     return torch, ImageModelDescriptor, ModelLoader
 
 
@@ -203,19 +203,3 @@ def denoise(rgb, progress=None, *, device='auto', tile=512, overlap=128):
                       attempted_tile_pixels=attempted, model_only=True, seconds=perf_counter()-started)
     return output, report
 
-
-def blend_strength(source, candidate, luminance, chroma):
-    """Pipeline sliders blend the fixed model; they are not learned noise sigmas."""
-    import cv2
-    if any(not math.isfinite(v) or not 0 <= v <= 100 for v in (luminance, chroma)):
-        raise ValueError('SCUNet luminance/color blending must be between 0 and 100.')
-    if luminance == chroma == 100:
-        return candidate.copy()
-    if luminance == chroma == 0:
-        return source.copy()
-    if luminance == chroma:
-        return np.uint8(source.astype(np.float32)+(candidate.astype(np.float32)-source)*(luminance/100)+.5)
-    a = cv2.cvtColor(source.astype(np.float32)/255, cv2.COLOR_RGB2LAB)
-    b = cv2.cvtColor(candidate.astype(np.float32)/255, cv2.COLOR_RGB2LAB)
-    result = a+(b-a)*np.float32([luminance/100, chroma/100, chroma/100])
-    return np.uint8(np.clip(cv2.cvtColor(result, cv2.COLOR_LAB2RGB)*255+.5, 0, 255))
