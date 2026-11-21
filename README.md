@@ -1,6 +1,8 @@
 # Stable Shift
 
-**V2.24** keeps one restoration workflow: image analysis, SCUNet denoising, deblotching and reference color correction. Automatic strengths are on by default. Manual overrides are optional.
+**V2.25** keeps one restoration workflow: image analysis, SCUNet denoising, deblotching and reference color correction. Automatic strengths are on by default. Manual overrides are optional.
+
+V2.25 corrects false Classic fallbacks: a stable Robust fit is preferred when its held-out color match is comparable to or better than Classic. Edited details no longer have to satisfy an arbitrary requirement to halve the error of a flat-color guess. Denoising, deblotching and strength analysis are unchanged.
 
 Close the app, update your Git checkout, then double-click **START_Stable_Shift.bat**. Git removes the retired tracked scripts; your existing `.venv`, model cache and images remain in place. A fresh ZIP should be extracted into a new folder.
 

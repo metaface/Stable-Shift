@@ -39,6 +39,27 @@ def test_unrelated_colors_still_fall_back_explicitly_and_off_is_available():
     assert model is None and report['selected_method'] == 'Off'
 
 
+@pytest.mark.parametrize('reference_noise', [8, 11])
+def test_supported_color_fit_is_not_rejected_for_unexplainable_reference_detail(reference_noise):
+    rng = np.random.default_rng(120)
+    colors = rng.integers(90, 132, (10, 12, 3), dtype=np.uint8)
+    source = np.repeat(np.repeat(colors, 20, axis=0), 20, axis=1)
+    matrix = np.array([[1.04, .06, -.03], [-.08, .96, .10], [.05, -.03, .90]])
+    clean_target = np.uint8(np.clip(source.astype(float)@matrix+[-8,2,12]+.5, 0, 255))
+    reference = np.uint8(np.clip(source.astype(float)@matrix+[-8,2,12]+
+        rng.normal(0, reference_noise, source.shape)+.5, 0, 255))
+    model, report = fit_global_color(Image.fromarray(reference), source)
+    assert report['selected_method'] == 'Robust global', report
+    assert np.abs(model.apply(source).astype(float)-clean_target).mean() < 1.5
+    # This was the overly strict rejection even when Classic was worse.
+    assert report['global_validation_median_delta_e'] > .5*report['constant_validation_median_delta_e']
+
+
+def test_constant_reference_cannot_authorize_collapsing_all_source_colors():
+    _, report = fit_global_color(Image.new('RGB', (192,160), (90,100,110)), scene())
+    assert report['selected_method'] == 'Classic'
+
+
 def test_analysis_distinguishes_quiet_noisy_and_smooth_surfaces():
     quiet = np.full((128,160,3), 150, np.uint8)
     noisy = np.uint8(np.clip(quiet.astype(float)+np.random.default_rng(9).normal(0,3,quiet.shape)+.5,0,255))

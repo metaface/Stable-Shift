@@ -1,4 +1,4 @@
-# Stable Shift V2.24
+# Stable Shift V2.25
 
 Open an image and optionally a reference, then press **Run**. The reference supplies colors; it is not used to replace image details. Automatic strengths are enabled by default. No reference is required for denoising/deblotching.
 
@@ -12,7 +12,7 @@ Reference correction uses the selected method and one frozen fit across all debl
 
 ## Color methods
 
-- **Robust global** fits one RGB transform to corresponding coarse colors. Its channel-mixing checks are normalized by overall exposure, so valid 0.1× darkening or strong brightening need not fail just because of scale. Actual fit quality and relative color collapse are still checked.
+- **Robust global** fits one RGB transform to corresponding coarse colors. Its channel-mixing checks are normalized by overall exposure, so valid 0.1× darkening or strong brightening need not fail just because of scale. A stable fit is preferred when held-out color agreement matches or improves Classic; it must beat a flat-color guess. Clearly worse color errors, lost color variation and unstable channel mixing can still trigger Classic. The old fixed absolute-error and 50%-improvement rejection rules have been removed.
 - **Classic** retains the accepted coarse LAB correction. It is also the explicitly reported fallback when Robust cannot fit a reliable mapping, including some references with different compositions.
 
 The old Global palette statistics transfer is removed. Neither a new subtitle mask nor a new halo-repair pass is added. Classic retains its inherited local variation; it is not the uniform RGB model.

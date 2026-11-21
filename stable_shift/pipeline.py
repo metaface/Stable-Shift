@@ -77,7 +77,7 @@ def prepare(reference, edited, options=Options(), progress=None, *, cached=None)
     recommended = {'denoise': noise['denoise'], 'deblotch': surfaces['deblotch'], 'color': reference_dose}
     applied = recommended if options.automatic else {'denoise': dose,
         'deblotch': float(options.deblotch), 'color': float(options.color) if transform is not None else 0.}
-    report = {'version': '2.24', 'backend': 'SCUNet', 'options': asdict(options),
+    report = {'version': '2.25', 'backend': 'SCUNet', 'options': asdict(options),
         'input_signatures': {'edited': signature, 'reference': image_signature(reference) if reference is not None else None},
         'analysis': {'noise': noise, 'surfaces': surfaces}, 'recommended': recommended,
         'prepared_strengths': applied, 'color_correction': color_report,
