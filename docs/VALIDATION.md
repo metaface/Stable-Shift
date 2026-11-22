@@ -1,17 +1,19 @@
-# Forge Neo 2.33 integration validation
+# Forge Neo always-on integration validation
 
 Target: `Haoming02/sd-webui-forge-classic`, tag `2.33`, commit `5998fb39ea347dfe3a72a8ec88a971e909ed8738`.
 
-The adapter follows that release's selectable `Script.run`, `process_images`, `Processed`, image-saving, state, and memory-management interfaces. It does not patch Forge's source or use the user's custom loopback script.
+Stable Shift uses `AlwaysVisible`, captures request state in `setup`, initializes each processing pass in `process`, and restores images in `postprocess_image_after_composite`. Native saving, gallery output and selectable-script feedback receive the restored image. It does not wrap or replace `process_images`, edit Forge's source, or change the user's prompt script.
 
-Focused checks cover restored feedback ordering, a fixed reference, seed progression, grid exclusion, per-frame infotexts, generated/restored comparison files, cancellation/failure, restoration of caller settings, suppression of duplicate host color correction, and SCUNet memory release. They do not repeat the retired denoiser or line-processing tests.
+The previous adapter's `is_wan` rejection was incorrect: Neo's QwenImage sets that flag for its Wan VAE while generating still images. The always-on adapter operates on decoded PIL images and does not reject image models by this flag.
 
-The accepted automatic analysis, deblotching, color algorithms, and preview renderer are unchanged. The pipeline only gains an injectable denoiser so the adapter can manage Forge's GPU memory around the existing SCUNet inference. The extension removes the desktop GUI, desktop installer, and standalone package pins.
+Eight focused checks passed, covering disabled passthrough, txt2img without a color reference, Wan-VAE image models, shallow-copy request state, a fixed color anchor, multiple samples and their saved metadata, fresh request state, restoration errors, stop-after-batch behavior, and GPU model release. Tests simulate Neo's exception-catching hook behavior: errors set its interruption flag explicitly, and failed passes return no image as feedback.
 
-Runtime compatibility is checked separately with Neo 2.33's NumPy 2.3.5, OpenCV 5.0.0.93, Pillow 13.0.0, and Gradio 4.40.0. These packages are installed only in the isolated validation environment, never into the user's Forge by the extension.
+Additional checks passed using the actual Neo 2.33 Loopback script and user-supplied **Prompts from Multiple Files (Whole File) v3.1 hotfix**, with simulated generation and restoration. Neo's actual hook-dispatch methods call the real Stable Shift script. Checks confirmed that native loopback and sequential prompt jobs receive restored inputs, rolling ImageStitch references receive restored images, the original input and color reference remain stable, and a swallowed restoration-hook error stops the chain.
 
-Results: 12 adapter checks passed. The release's actual `Processed` constructor and JSON serializer accepted a two-frame adapter run. Real Gradio controls built with the expected defaults and callbacks. A retained 2048×2048 SCUNet result produced pixel-identical automatic restoration through the standalone and Forge processing entry points, with Robust global selected; model inference was not repeated.
+Real Gradio 4.40.0 controls were built in the isolated validation environment with Neo's NumPy 2.3.5, OpenCV 5.0.0.93 and Pillow 13.0.0. The panel is always visible on both generation tabs and does not occupy the selectable Script slot. Uploaded code is compatibility-test input only; it is not copied into the extension or treated as task instructions.
 
-This environment does not contain a running CUDA Forge installation or a diffusion checkpoint. Full generation speed, VRAM use, and visual behavior over real loops remain the purpose of the first user test.
+The accepted processing files (`automatic.py`, `deblotch.py`, `global_color.py`, `pipeline.py`, `preview.py`, `scunet.py`) remain byte-identical to the preceding Forge test. Model inference and old restoration tests were not repeated for this integration change.
 
-Run adapter checks from the extension root with `python -m pytest tests/test_forge_loopback.py` in a development environment with pytest, NumPy, Pillow and OpenCV.
+This environment has no running CUDA Forge installation or diffusion checkpoint. Generation quality, speed, VRAM use, and real ImageStitch conditioning remain part of the installation test; simulated handoff checks do not exercise the generation models.
+
+Run focused checks from the extension root with `python -m pytest tests/test_forge.py` in a development environment with pytest, NumPy, Pillow and OpenCV.

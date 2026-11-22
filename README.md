@@ -1,67 +1,67 @@
-# Stable Shift for Forge Neo — first loopback test
+# Stable Shift for Forge Neo
 
-An img2img loopback extension targeting [Forge Neo 2.33](https://github.com/Haoming02/sd-webui-forge-classic/tree/2.33). Each generation passes through the accepted Stable Shift V2.25 restoration pipeline: automatic analysis, SCUNet real-PSNR, deblotching, and reference color correction. The **restored pixels become the next loop's input**.
+An always-visible restoration panel for [Forge Neo 2.33](https://github.com/Haoming02/sd-webui-forge-classic/tree/2.33). Enable it on **txt2img or img2img**, then use normal generation, native Loopback, or another selectable script. It applies the accepted automatic SCUNet, deblotching, and optional reference-color correction to each generated image **before Forge saves or returns it**.
 
-This branch contains the Forge extension. The desktop application remains on `main-standalone`.
+Stable Shift has its own panel, independent of the Script dropdown. The selected script controls prompts, seeds, batches, loop counts, and generation inputs. When that script uses a returned image as its next input or generated ImageStitch reference, it receives the restored image. The standalone application remains on `main-standalone`.
 
-## Install this test
+## Update the previous Forge test
 
-Update Forge Neo to 2.33 first. From your **Forge folder** in Git Bash:
-
-```bash
-git clone --branch forge-neo-2.33-test --single-branch https://github.com/metaface/Stable-Shift.git extensions/Stable-Shift
-```
-
-Restart Forge completely. The repository is private, so Git may ask you to sign in with an account that has access. No separate virtual environment or package installation is needed: Neo 2.33 already provides Torch, Spandrel, NumPy, OpenCV, and Pillow. This extension does not install or downgrade them.
-
-The first SCUNet use downloads the official 72 MB checkpoint into `extensions/Stable-Shift/models`. You can also copy your existing `scunet_color_real_psnr.pth` there; its checksum is verified before use. [Official checkpoint source](https://github.com/cszn/KAIR/releases/tag/v1.0).
-
-To update this test later:
+From your **Forge folder** in Git Bash:
 
 ```bash
 git -C extensions/Stable-Shift pull --ff-only
 ```
 
-Restart Forge after updating.
+Restart Forge completely. The old **Stable Shift Loopback** dropdown entry is replaced by a permanent **Stable Shift** panel on both generation tabs. Existing model weights stay in place.
 
-## First test
+For a fresh install:
 
-1. Open ordinary **img2img** and load a starting image. Use your usual prompt/model and generation settings.
-2. Set Forge **Batch size = 1** and **Batch count = 1**.
-3. In the **Script** dropdown, select **Stable Shift Loopback**.
-4. Start with **3 loops**, **Automatic restoration strengths** checked, and **Starting image** as the color reference.
-5. Leave comparison saving enabled and click Forge's normal **Generate** button.
+```bash
+git clone --branch forge-neo-2.33-test --single-branch https://github.com/metaface/Stable-Shift.git extensions/Stable-Shift
+```
 
-The gallery contains the restored result of each completed loop, in order. Forge's img2img denoising strength stays constant. The seed increments by one per loop unless you choose Fixed. The last loop is restored too.
+Neo 2.33 supplies the dependencies; this extension does not install or downgrade them. The first SCUNet use downloads its verified official 72 MB checkpoint into `extensions/Stable-Shift/models`. You can also copy your existing `scunet_color_real_psnr.pth` there. [Official checkpoint source](https://github.com/cszn/KAIR/releases/tag/v1.0).
 
-The same starting image is the color reference throughout the chain. You can instead upload a separate reference, or select Off. Robust global and Classic use the same accepted standalone implementations, including reporting an actual fallback. Forge's own automatic img2img color correction is bypassed within this script to avoid applying two corrections; its global setting is not changed.
+## Use
 
-Uncheck Automatic to expose manual SCUNet (0–100%), deblotch (0–200%), and reference correction (0–100%) controls. Automatic analyzes each newly generated frame separately. It estimates noise and surface variation; intentional grain and small details can affect those estimates.
+1. Open **txt2img** or **img2img** and configure generation normally.
+2. Expand **Stable Shift** and check **Enable Stable Shift**.
+3. Leave **Automatic restoration strengths** enabled for the first test.
+4. Choose your normal script in the **Script** dropdown, or None for normal generation.
+5. Click Forge's **Generate** button.
+
+For native Loopback, select **Loopback** and start with three loops. For **Prompts from Multiple Files (Whole File) v3.1 hotfix**, select that script and use its normal progression controls. **Previous generated image** makes its next img2img job use the restored output; generated ImageStitch references also receive restored outputs. **Original input each step** keeps the original input, as that script specifies.
+
+Stable Shift's color reference is optional and separate from the references used to guide generation:
+
+- **Starting image**: fixed to the original img2img input for the request, including scripts that copy the processing object.
+- **Uploaded reference**: use a separate image for color correction on either tab.
+- **Off**: denoising/deblotching without Stable Shift reference-color correction. This is the default on txt2img.
+
+If Starting image is selected without an img2img input, color correction is skipped; denoising and deblotching still work. Robust global and Classic retain the accepted implementations. While applying reference-color correction, Stable Shift bypasses Forge's img2img histogram correction within that processing pass and restores the original per-pass setting afterward. With Stable Shift color correction off, Forge's own color setting continues to apply normally.
+
+Uncheck Automatic to expose SCUNet (0–100%), deblotch (0–200%), and color (0–100%) strengths. Automatic analyzes every generated image separately. Disabled Stable Shift leaves normal generation unchanged.
 
 ## Comparison files
 
-With comparison saving enabled, the img2img output folder contains:
+With comparison saving enabled, the normal image output folder contains:
 
 ```text
 stable-shift/<run-id>/
-  00-input.png
-  00-color-reference.png       # when enabled
-  01-generated.png
-  01-restored.png
-  02-generated.png
-  02-restored.png
+  00-input.png                 # when an img2img input exists
+  00-color-reference.png       # when a color reference exists
+  0001-generated.png
+  0001-restored.png
+  0002-generated.png
+  0002-restored.png
   ...
   report.json
 ```
 
-`report.json` records per-loop automatic strengths, color method/fallback, model timings, seeds, and pixel signatures. A loop's feedback signature should equal the next loop's generation-input signature. Restored PNGs include generation settings. These files are enough to diagnose the first test; zip the run folder if sharing it.
+The report records each image's actual strengths, color method/fallback, model timings, seed, and input/output signatures. Restored PNGs include generation settings. These comparisons are independent of Forge's normal sample-saving setting. Zip the run folder to share it.
 
-Normal restored samples also follow Forge's sample-saving settings. Feedback uses the in-memory restored image, so saving samples as JPEG does not add JPEG degradation to the loop. Comparison saving is independent of normal automatic sample saving.
+Restoration runs after inpainting compositing, on the final image, and before native saving and script feedback. Batches are supported; grids are assembled afterward and are not denoised again. Model-family flags such as Qwen's Wan VAE flag do not block still-image restoration.
 
-Interrupt discards a restoration that has not finished, and returns already completed restored frames. Stop after the current batch lets that generated frame finish restoration, then stops the chain. A restoration failure stops the run and reports the error, rather than feeding the uncorrected generation forward.
+Forge models are offloaded before CUDA SCUNet inference, and SCUNet releases its model afterward. Interruption or a restoration error stops further generation and removes the failed pass from returned feedback. Neo may still save an incomplete sample when an image hook is interrupted; its Stable Shift status is labeled Failed or Interrupted rather than Completed.
 
-## Scope of this first test
-
-This version supports one chain of ordinary still-image img2img generations. Inpainting and multiple-image batches are rejected with an explanatory message. It uses neither the native Loopback script nor a custom loopback script. Progressive lighting controls and additional line processing are outside this test.
-
-Forge offloads its diffusion models before SCUNet uses CUDA. SCUNet releases its model afterward so Forge can resume generation; the checkpoint stays cached on disk. CPU Forge uses CPU SCUNet. The adapter has focused integration checks against Neo 2.33's interfaces; a complete GPU loop still needs testing in your Forge installation. See [validation details](docs/VALIDATION.md).
+The numeric restoration core is unchanged. Compatibility checks use the actual native Loopback and uploaded prompt script with simulated generation, plus Neo 2.33's real hook dispatcher and Gradio controls. Full GPU generation remains an installation test. See [validation details](docs/VALIDATION.md).
