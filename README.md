@@ -77,14 +77,6 @@ Stable Shift handles restoration; the script selected in Forge controls prompts,
 
 Each generated image is restored before Loopback uses it as the next input.
 
-### Prompts from Multiple Files
-
-Select **Prompts from Multiple Files (Whole File)** and configure its progression controls normally.
-
-- **Previous generated image** uses the restored output as the next img2img input.
-- **Original input each step** continues using the original input.
-- Generated ImageStitch references receive restored images.
-
 ## Saved images and comparisons
 
 Forge's normal gallery and sample-saving settings apply to restored images. Stable Shift processes individual images before grids are assembled.
