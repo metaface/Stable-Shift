@@ -1,31 +1,67 @@
-# Stable Shift
+# Stable Shift for Forge Neo — first loopback test
 
-**V2.25** keeps one restoration workflow: image analysis, SCUNet denoising, deblotching and reference color correction. Automatic strengths are on by default. Manual overrides are optional.
+An img2img loopback extension targeting [Forge Neo 2.33](https://github.com/Haoming02/sd-webui-forge-classic/tree/2.33). Each generation passes through the accepted Stable Shift V2.25 restoration pipeline: automatic analysis, SCUNet real-PSNR, deblotching, and reference color correction. The **restored pixels become the next loop's input**.
 
-V2.25 corrects false Classic fallbacks: a stable Robust fit is preferred when its held-out color match is comparable to or better than Classic. Edited details no longer have to satisfy an arbitrary requirement to halve the error of a flat-color guess. Denoising, deblotching and strength analysis are unchanged.
+This branch contains the Forge extension. The desktop application remains on `main-standalone`.
 
-Close the app, update your Git checkout, then double-click **START_Stable_Shift.bat**. Git removes the retired tracked scripts; your existing `.venv`, model cache and images remain in place. A fresh ZIP should be extracted into a new folder.
+## Install this test
 
-1. Open or drop the image to restore.
-2. Optionally open a color reference.
-3. Leave **Automatic strengths** enabled and press **Run**.
+Update Forge Neo to 2.33 first. From your **Forge folder** in Git Bash:
 
-The result bar shows the actual strengths and color method. **Save PNG + settings** writes the native image and applied settings. **Save test** exports the inputs, result and analysis, with a share ZIP within 30 MiB when possible.
+```bash
+git clone --branch forge-neo-2.33-test --single-branch https://github.com/metaface/Stable-Shift.git extensions/Stable-Shift
+```
 
-## Automatic and manual control
+Restart Forge completely. The repository is private, so Git may ask you to sign in with an account that has access. No separate virtual environment or package installation is needed: Neo 2.33 already provides Torch, Spandrel, NumPy, OpenCV, and Pillow. This extension does not install or downgrade them.
 
-Analysis estimates fine scatter and remaining surface variation. It can skip denoising on quiet inputs, use full SCUNet on noisy ones, and choose stronger deblotching for textured bright surfaces. These measurements select amounts of the accepted operations; they do not paint protected borders or restore source noise around lines. Intentional texture can affect the estimate.
+The first SCUNet use downloads the official 72 MB checkpoint into `extensions/Stable-Shift/models`. You can also copy your existing `scunet_color_real_psnr.pth` there; its checksum is verified before use. [Official checkpoint source](https://github.com/cszn/KAIR/releases/tag/v1.0).
 
-Uncheck **Automatic strengths** to expose **Denoise 0–100%**, **Deblotch 0–200%**, and **Color correction 0–100%**. Manual values start at the applied automatic settings. Deblotch and color update from cached pixels. Denoise or color-method changes require Run, reusing matching SCUNet inference.
+To update this test later:
 
-**Robust global** is the default color method, with an explicitly reported **Classic** fallback. Classic remains selectable. Robust now evaluates color mixing relative to overall exposure, allowing legitimate strong darkening/brightening. It still validates color agreement; a different composition can require Classic. The experimental Global palette transfer has been removed.
+```bash
+git -C extensions/Stable-Shift pull --ff-only
+```
 
-## SCUNet setup
+Restart Forge after updating.
 
-Existing SCUNet installations are reused. For a new installation, use **SCUNet setup → NVIDIA GPU** or **CPU**, then restart. The official real-PSNR model is downloaded and checksum verified in `models/`. Optional PyTorch/Spandrel remain separate from base dependencies and the small standalone ZIP. CPU inference can take minutes on large images.
+## First test
 
-## Current scope
+1. Open ordinary **img2img** and load a starting image. Use your usual prompt/model and generation settings.
+2. Set Forge **Batch size = 1** and **Batch count = 1**.
+3. In the **Script** dropdown, select **Stable Shift Loopback**.
+4. Start with **3 loops**, **Automatic restoration strengths** checked, and **Starting image** as the color reference.
+5. Leave comparison saving enabled and click Forge's normal **Generate** button.
 
-BM3D/NLM, source guards, pyramid/line reconstruction, antialiasing, Preserve Edits, old comparison buttons/scripts, historical validation files and their unused tests have been removed from this branch. Existing Git history retains prior versions. No new halo-repair operation is included.
+The gallery contains the restored result of each completed loop, in order. Forge's img2img denoising strength stays constant. The seed increments by one per loop unless you choose Fixed. The last loop is restored too.
 
-See [the user guide](docs/STANDALONE.md) and [focused validation](docs/VALIDATION.md). Core processing is available separately from Tk through `stable_shift.pipeline` for later Forge integration.
+The same starting image is the color reference throughout the chain. You can instead upload a separate reference, or select Off. Robust global and Classic use the same accepted standalone implementations, including reporting an actual fallback. Forge's own automatic img2img color correction is bypassed within this script to avoid applying two corrections; its global setting is not changed.
+
+Uncheck Automatic to expose manual SCUNet (0–100%), deblotch (0–200%), and reference correction (0–100%) controls. Automatic analyzes each newly generated frame separately. It estimates noise and surface variation; intentional grain and small details can affect those estimates.
+
+## Comparison files
+
+With comparison saving enabled, the img2img output folder contains:
+
+```text
+stable-shift/<run-id>/
+  00-input.png
+  00-color-reference.png       # when enabled
+  01-generated.png
+  01-restored.png
+  02-generated.png
+  02-restored.png
+  ...
+  report.json
+```
+
+`report.json` records per-loop automatic strengths, color method/fallback, model timings, seeds, and pixel signatures. A loop's feedback signature should equal the next loop's generation-input signature. Restored PNGs include generation settings. These files are enough to diagnose the first test; zip the run folder if sharing it.
+
+Normal restored samples also follow Forge's sample-saving settings. Feedback uses the in-memory restored image, so saving samples as JPEG does not add JPEG degradation to the loop. Comparison saving is independent of normal automatic sample saving.
+
+Interrupt discards a restoration that has not finished, and returns already completed restored frames. Stop after the current batch lets that generated frame finish restoration, then stops the chain. A restoration failure stops the run and reports the error, rather than feeding the uncorrected generation forward.
+
+## Scope of this first test
+
+This version supports one chain of ordinary still-image img2img generations. Inpainting and multiple-image batches are rejected with an explanatory message. It uses neither the native Loopback script nor a custom loopback script. Progressive lighting controls and additional line processing are outside this test.
+
+Forge offloads its diffusion models before SCUNet uses CUDA. SCUNet releases its model afterward so Forge can resume generation; the checkpoint stays cached on disk. CPU Forge uses CPU SCUNet. The adapter has focused integration checks against Neo 2.33's interfaces; a complete GPU loop still needs testing in your Forge installation. See [validation details](docs/VALIDATION.md).

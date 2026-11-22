@@ -1,4 +1,0 @@
-Pillow>=10,<13
-numpy>=1.26,<3
-opencv-python>=4.8,<5
-tkinterdnd2==0.7.0
