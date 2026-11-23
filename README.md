@@ -19,7 +19,7 @@ Stable Shift is designed for [Forge Neo 2.33](https://github.com/Haoming02/sd-we
    | Field | Value |
    | --- | --- |
    | URL for extension's git repository | `https://github.com/metaface/Stable-Shift.git` |
-   | Branch name | `forge-neo-2.33-test` |
+   | Branch name | `main-extension` |
 
 4. Click **Install**.
 5. Restart Forge completely.
