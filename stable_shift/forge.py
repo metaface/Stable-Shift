@@ -4,7 +4,7 @@ Request state lives on the processing object. Selectable scripts can shallow-cop
 that object and still share the original color anchor and comparison session.
 This module never schedules generations or chooses their prompts, inputs or seeds.
 """
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -13,6 +13,7 @@ from uuid import uuid4
 from PIL import Image, ImageOps, PngImagePlugin
 
 from . import __version__, FORGE_TEST_VERSION
+from .color_shift import ColorShift, from_linear, to_linear
 from .global_color import color_method_label
 from .pipeline import Options, restore
 from .preview import image_signature
@@ -31,6 +32,7 @@ class Settings:
     reference_mode: str = 'Starting image'
     reference_image: object = None
     save_test: bool = True
+    shift: ColorShift = ColorShift()
 
 
 @dataclass
@@ -44,6 +46,9 @@ class Session:
     failed: bool = False
     count: int = 0
     report: dict = field(default_factory=dict)
+    generation_steps: int = 0
+    shift_reference: object = None
+    reference_steps: int = 0
 
 
 @dataclass
@@ -54,6 +59,7 @@ class Pass:
     owns_color: bool
     restored: dict = field(default_factory=dict)
     failed: bool = False
+    first_step: int = 0
 
 
 class RestorationInterrupted(Exception):
@@ -76,6 +82,8 @@ def _rgb(image):
 
 def _new_session(p, settings):
     settings.options.validate()
+    if settings.shift.enabled:
+        settings.shift.validate()
     if settings.reference_mode not in REFERENCE_MODES:
         raise ValueError('Unknown Stable Shift color reference mode.')
     if settings.reference_mode == 'Uploaded reference' and not isinstance(settings.reference_image, Image.Image):
@@ -109,6 +117,8 @@ def _initialize(p, session):
         'reference_mode': settings.reference_mode,
         'reference_signature': image_signature(session.reference) if session.reference is not None else None,
         'status': 'running', 'frames': []}
+    if settings.shift.enabled:
+        session.report['color_shift'] = asdict(settings.shift)
     if settings.reference_mode == 'Starting image' and session.reference is None:
         session.report['reference_note'] = 'No starting image; color correction is disabled. An uploaded reference can be used with txt2img.'
     if settings.save_test:
@@ -170,6 +180,9 @@ def begin(p, settings):
         source = _input(p)
         current = Pass(session, image_signature(source) if source is not None else None,
                        getattr(p, 'color_corrections', None), owns_color)
+        if session.settings.shift.active:
+            current.first_step = session.generation_steps
+            session.generation_steps += max(1, int(p.n_iter))
         setattr(p, PASS, current)
         # Copy metadata because third-party scripts can shallow-copy p.
         p.extra_generation_params = {k: v for k, v in (p.extra_generation_params or {}).items()
@@ -183,6 +196,9 @@ def begin(p, settings):
             PREFIX+' requested deblotch': options.deblotch,
             PREFIX+' requested color': options.color,
         })
+        if session.settings.shift.enabled:
+            p.extra_generation_params.update({PREFIX+' shift '+key: value
+                for key, value in asdict(session.settings.shift).items()})
         if owns_color:
             # The host's img2img init checks for None before constructing its
             # histogram correction. This also overrides native Loopback's list.
@@ -218,6 +234,26 @@ def _metadata(p, index, values):
         items[index] = value
 
 
+def _shift_reference(current, step):
+    """Follow the previous loop's lighting before applying this loop's step.
+
+    The original reference stays immutable. Cached float pixels avoid accumulating
+    uint8 rounding in the target and are shared across shallow processing copies.
+    """
+    session = current.session
+    if session.reference is None or not current.owns_color or not session.settings.shift.active:
+        return session.reference
+    if step == 1:
+        return session.reference
+    if session.shift_reference is None or session.reference_steps > step-1:
+        session.shift_reference = to_linear(session.reference)
+        session.reference_steps = 0
+    while session.reference_steps < step-1:
+        session.shift_reference = session.settings.shift.advance(session.shift_reference)
+        session.reference_steps += 1
+    return from_linear(session.shift_reference)
+
+
 def process_image(p, pp, settings):
     """After compositing, before native saving, gallery and script feedback."""
     current = getattr(p, PASS, None)
@@ -231,6 +267,8 @@ def process_image(p, pp, settings):
     session.count += 1
     frame = session.count
     options = session.settings.options
+    shift = session.settings.shift
+    step = current.first_step+pp.index//max(1, int(p.batch_size))+1 if shift.active else 0
     status = None
 
     def progress(message):
@@ -245,7 +283,11 @@ def process_image(p, pp, settings):
         raw = pp.image.convert('RGB')
         if session.directory is not None:
             raw.save(session.directory/f'{frame:04d}-generated.png')
-        cleaned, report = restore(session.reference, raw, options, progress, denoiser=_forge_denoise)
+        reference = _shift_reference(current, step) if shift.active else session.reference
+        cleaned, report = restore(reference, raw, options, progress, denoiser=_forge_denoise)
+        if shift.active:
+            progress('applying the per-loop color change')
+            cleaned = shift.apply(cleaned)
         progress('finishing restoration')
         if cleaned.size != raw.size:
             raise RuntimeError('Stable Shift must retain the generated image dimensions.')
@@ -254,6 +296,10 @@ def process_image(p, pp, settings):
         _metadata(p, pp.index, {'status': 'Completed', 'frame': frame,
             'denoise': applied['denoise'], 'deblotch': applied['deblotch'],
             'color': applied['color'], 'color method': method})
+        if shift.enabled:
+            _metadata(p, pp.index, {'shift generation': step})
+            report['color_shift'] = dict(asdict(shift), generation_step=step,
+                reference_follows_progression=bool(shift.active and current.owns_color))
         text = processing.create_infotext(p, p.all_prompts, p.all_seeds, p.all_subseeds,
                                          index=pp.index, all_negative_prompts=p.all_negative_prompts)
         cleaned.info['parameters'] = text
