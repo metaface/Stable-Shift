@@ -26,8 +26,8 @@ Stable Shift is designed for [Forge Neo 2.33](https://github.com/Haoming02/sd-we
 
 ### Install from a ZIP
 
-1. Open the [Stable Shift repository](https://github.com/metaface/Stable-Shift/tree/forge-neo-2.33-test) and select the **forge-neo-2.33-test** branch.
-2. Choose **Code → Download ZIP**, or [download that branch directly](https://github.com/metaface/Stable-Shift/archive/refs/heads/forge-neo-2.33-test.zip).
+1. Open the [Stable Shift repository](https://github.com/metaface/Stable-Shift/tree/main-extension) and select the **main-extension** branch.
+2. Choose **Code → Download ZIP**, or [download that branch directly](https://github.com/metaface/Stable-Shift/archive/refs/heads/main-extension.zip).
 3. Extract the ZIP.
 4. Place the extracted extension folder inside your Forge installation's **extensions** folder and name it **Stable-Shift**.
 
@@ -89,6 +89,23 @@ Uncheck **Automatic restoration strengths** to expose the manual controls:
 | Reference color correction | 0–100% |
 
 A strength of **0** disables that stage's effect. Deblotching above **100%** applies stronger cleanup.
+
+## Color changes per loop
+
+Enable **Apply color changes per loop** to deliberately change lighting or colors as a loopback run progresses. The controls are independent of automatic cleanup:
+
+| Control | Effect per loop |
+| --- | --- |
+| Exposure | Negative EV darkens; positive EV brightens. For example, −0.10 EV per loop reaches approximately half the linear-light brightness after ten loops. |
+| Red / cyan | Positive shifts toward red; negative shifts toward cyan. |
+| Blue / yellow | Positive shifts toward blue; negative shifts toward yellow. Combine both balances for other directions, including green or magenta. |
+| Saturation | Positive increases color intensity; negative reduces it. The percentage compounds across loops. |
+
+The option starts disabled. Zero values leave colors unchanged. All images in a generation batch receive the same step, and the progression resets for each new Generate request.
+
+With a color reference enabled, the reference target follows the preceding color steps, then the next step is applied after cleanup. This lets correction maintain the intended lighting progression. With the reference Off, each output receives one color step; changes accumulate when that output is fed into the next loop.
+
+Expand **Preview cumulative colors** and click **Preview color progression** to compare the original image with the first, middle, and final steps. The preview uses the current img2img image, or an uploaded color reference. You can upload a separate preview image to override those. No generation or denoising runs, so it can be used before enabling the changes for generation. It shows the color adjustments on a still image; generation will also change image details.
 
 ## How to use it
 

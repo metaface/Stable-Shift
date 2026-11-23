@@ -11,6 +11,7 @@ import pytest
 
 from stable_shift import forge
 from stable_shift.pipeline import Options
+from stable_shift.color_shift import ColorShift
 
 
 class Processed:
@@ -223,6 +224,52 @@ def test_stop_after_current_batch_finishes_restoration(host):
     assert len(proc.images) == 1 and proc.images[0].getpixel((0, 0))[0] == 90
     assert not host.state.interrupted
     assert host.state.textinfo == 'Another extension is finishing'
+
+
+def test_color_reference_follows_progression_across_copies_and_batches(host, monkeypatch):
+    shift = ColorShift(True, exposure=-.1, red=.02, blue=-.01)
+    host.settings = forge.Settings(True, shift=shift)
+    host.p.batch_size = 2
+    original = host.p.init_images[0].copy()
+    seen_references = []
+    def reference_match(reference, raw, options, progress, *, denoiser):
+        seen_references.append(reference.copy())
+        return reference.copy(), {'applied': {'denoise': 100., 'deblotch': 85., 'color': 100.},
+            'color_correction': {'requested_method': 'Robust global', 'selected_method': 'Robust global'}}
+    monkeypatch.setattr(forge, 'restore', reference_match)
+    forge.setup(host.p, host.settings)
+    previous = None
+    for step in (1, 2, 3):
+        copied = copy.copy(host.p)
+        if previous is not None:
+            copied.init_images = [previous.copy()]
+        proc = host.process_images(copied)
+        assert proc.images[0].tobytes() == proc.images[1].tobytes()
+        expected = np.array(shift.apply(original, step)).astype(int)
+        assert np.abs(np.array(proc.images[0]).astype(int)-expected).max() <= 1
+        assert copied.extra_generation_params['Stable Shift shift generation'] == [step, step]
+        previous = proc.images[0]
+    assert seen_references[0].tobytes() == original.tobytes()
+    assert seen_references[2].tobytes() == shift.apply(original).tobytes()
+    assert host.p.init_images[0].tobytes() == original.tobytes()
+    directory, = (host.root/'stable-shift').iterdir()
+    report = json.loads((directory/'report.json').read_text())
+    assert [item['color_shift']['generation_step'] for item in report['frames']] == [1, 1, 2, 2, 3, 3]
+    assert all(item['color_shift']['reference_follows_progression'] for item in report['frames'])
+    assert host.state.textinfo is None
+
+
+def test_color_shift_without_reference_applies_one_step_after_cleanup(host):
+    shift = ColorShift(True, exposure=-.5)
+    host.settings = forge.Settings(True, Options(reference=False), 'Off', shift=shift)
+    forge.setup(host.p, host.settings)
+    proc = host.process_images(host.p)
+    cleaned = Image.new('RGB', (64, 64), (90, 80, 90))
+    assert proc.images[0].tobytes() == shift.apply(cleaned).tobytes()
+    directory, = (host.root/'stable-shift').iterdir()
+    report = json.loads((directory/'report.json').read_text())
+    assert report['frames'][0]['color_shift']['reference_follows_progression'] is False
+    assert report['frames'][0]['applied']['color'] == 0
 
 
 @pytest.mark.parametrize('fails', [False, True])
