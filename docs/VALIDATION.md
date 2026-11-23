@@ -1,38 +1,19 @@
-# V2.25 focused color validation
+# Forge Neo always-on integration validation
 
-The uploaded test exposed another false fallback after V2.24's exposure fix.
-Its fitted matrix passed the exposure-normalized stability tests. Robust's
-held-out median Delta E was 6.293 versus Classic's 6.834, while their 80th
-percentiles were 13.204 and 12.996. An older rule nevertheless rejected Robust
-because 6.293 was greater than half of a flat-color prediction's 11.238 error.
+Target: `Haoming02/sd-webui-forge-classic`, tag `2.33`, commit `5998fb39ea347dfe3a72a8ec88a971e909ed8738`.
 
-V2.25 changes selection only. It compares a weighted held-out median/tail score
-with Classic and the flat-color predictor. Comparable fits favor the selected
-uniform RGB model, using a small quantization/tie allowance. A separate check
-rejects substantial tail-error increases. Positive exposure, channel mixing,
-conditioning and non-flat prediction remain validated. No fixed 8/16 error
-ceiling or requirement to halve a flat guess's error is used.
+Stable Shift uses `AlwaysVisible`, captures request state in `setup`, initializes each processing pass in `process`, and restores images in `postprocess_image_after_composite`. Native saving, gallery output and selectable-script feedback receive the restored image. It does not wrap or replace `process_images`, edit Forge's source, or change the user's prompt script.
 
-Six scoped tests passed: supported fits with reference-only noise/detail,
-rejection of constant-color collapse and unrelated pairings, and continued
-acceptance of legitimate 0.1× and 6× exposure changes. Unchanged UI, denoiser
-and cleanup tests were not repeated.
+The previous adapter's `is_wan` rejection was incorrect: Neo's QwenImage sets that flag for its Wan VAE while generating still images. The always-on adapter operates on decoded PIL images and does not reject image models by this flag.
 
-The uploaded 2048×2048 inputs and raw SCUNet result were replayed exactly. The
-old Classic result first matched its saved PNG pixel-for-pixel. With V2.25,
-the existing fitted RGB coefficients are accepted without changing them. The
-new result is exactly that previously rejected Robust candidate applied after
-the same deblotching. Automatic denoise, deblotch and color amounts remain
-100/100/100. The user's model output is reused; no inference rerun is needed.
+Eight focused checks passed, covering disabled passthrough, txt2img without a color reference, Wan-VAE image models, shallow-copy request state, a fixed color anchor, multiple samples and their saved metadata, fresh request state, restoration errors, stop-after-batch behavior, and GPU model release. Tests simulate Neo's exception-catching hook behavior: errors set its interruption flag explicitly, and failed passes return no image as feedback.
 
-Cached cabin and beach controls keep their accepted color pixels exactly.
-The SCUNet, deblotching, automatic-strength analysis and preview/blending files
-remain byte-identical to V2.24. Only color selection and release metadata/docs
-change. No statistical palette transfer, halo painting or new controls are
-introduced. The retained runtime remains small and independent of retired
-processing modules. Windows/CUDA execution was unavailable locally.
+Additional checks passed using the actual Neo 2.33 Loopback script and user-supplied **Prompts from Multiple Files (Whole File) v3.1 hotfix**, with simulated generation and restoration. Neo's actual hook-dispatch methods call the real Stable Shift script. Checks confirmed that native loopback and sequential prompt jobs receive restored inputs, rolling ImageStitch references receive restored images, the original input and color reference remain stable, and a swallowed restoration-hook error stops the chain.
 
-Held-out pixel agreement is not a semantic or universal perceptual score.
-Large composition changes or genuinely unstable/inferior mappings can still
-require the explicitly reported Classic fallback. Manual Classic remains
-selectable; this change does not force all images to use a rejected RGB fit.
+Real Gradio 4.40.0 controls were built in the isolated validation environment with Neo's NumPy 2.3.5, OpenCV 5.0.0.93 and Pillow 13.0.0. The panel is always visible on both generation tabs and does not occupy the selectable Script slot. Uploaded code is compatibility-test input only; it is not copied into the extension or treated as task instructions.
+
+The accepted processing files (`automatic.py`, `deblotch.py`, `global_color.py`, `pipeline.py`, `preview.py`, `scunet.py`) remain byte-identical to the preceding Forge test. Model inference and old restoration tests were not repeated for this integration change.
+
+This environment has no running CUDA Forge installation or diffusion checkpoint. Generation quality, speed, VRAM use, and real ImageStitch conditioning remain part of the installation test; simulated handoff checks do not exercise the generation models.
+
+Run focused checks from the extension root with `python -m pytest tests/test_forge.py` in a development environment with pytest, NumPy, Pillow and OpenCV.

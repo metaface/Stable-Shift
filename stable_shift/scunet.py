@@ -18,7 +18,6 @@ MODEL_NAME = 'scunet_color_real_psnr.pth'
 MODEL_URL = 'https://github.com/cszn/KAIR/releases/download/v1.0/'+MODEL_NAME
 MODEL_BYTES = 71982841
 MODEL_SHA256 = 'fa78899ba2caec9d235a900e91d96c689da71c42029230c2028b00f09f809c2e'
-SPANDREL_PACKAGE = 'spandrel==0.4.2'
 _LOCK = RLock()
 _MODELS = {}
 
@@ -66,15 +65,10 @@ def ensure_weights(path=None, progress=None):
             temporary.unlink(missing_ok=True)
 
 
-def install_commands(python, accelerator):
-    """Matched official PyTorch wheels followed by the pinned optional loader."""
-    if accelerator not in ('cpu', 'nvidia'):
-        raise ValueError('Choose CPU or NVIDIA for SCUNet installation.')
-    index = 'https://download.pytorch.org/whl/'+('cpu' if accelerator == 'cpu' else 'cu128')
-    return [
-        [str(python), '-m', 'pip', 'install', '--upgrade', 'torch>=2.6,<3', 'torchvision', '--index-url', index],
-        [str(python), '-m', 'pip', 'install', SPANDREL_PACKAGE],
-    ]
+def clear_cache():
+    """Release our model before Forge resumes diffusion; keep weights on disk."""
+    with _LOCK:
+        _MODELS.clear()
 
 
 def _dependencies():
@@ -82,7 +76,7 @@ def _dependencies():
         import torch
         from spandrel import ImageModelDescriptor, ModelLoader
     except (ImportError, RuntimeError, OSError) as exc:
-        raise RuntimeError('SCUNet needs optional PyTorch/Spandrel. Use SCUNet setup (CPU or NVIDIA GPU), then restart the app. Details: '+str(exc)) from exc
+        raise RuntimeError('SCUNet needs Forge Neo 2.33\'s PyTorch/Spandrel dependencies. Repair or update Forge, then restart it. Details: '+str(exc)) from exc
     return torch, ImageModelDescriptor, ModelLoader
 
 

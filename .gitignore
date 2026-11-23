@@ -2,10 +2,4 @@
 __pycache__/
 .pytest_cache/
 *.pyc
-startup.log
 /models/
-/dist/
-/stable_shift_v*/
-/*_test_v*/
-/scunet_cleanup_v*/
-/_legacy_backup/

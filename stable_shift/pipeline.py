@@ -35,7 +35,7 @@ class ModelCache:
     report: dict
 
 
-def prepare(reference, edited, options=Options(), progress=None, *, cached=None):
+def prepare(reference, edited, options=Options(), progress=None, *, cached=None, denoiser=None):
     options.validate()
     started = perf_counter()
     source = np.asarray(edited.convert('RGB')).copy()
@@ -51,7 +51,7 @@ def prepare(reference, edited, options=Options(), progress=None, *, cached=None)
         if cached is not None and cached.signature == signature:
             model_rgb, model_report, reused = cached.rgb, cached.report, True
         else:
-            model_rgb, model_report = denoise(source, progress)
+            model_rgb, model_report = (denoise if denoiser is None else denoiser)(source, progress)
             if model_rgb.dtype != np.uint8 or model_rgb.shape != source.shape:
                 raise ValueError('SCUNet must return native-size uint8 RGB pixels.')
             model_rgb = np.array(model_rgb, copy=True)
@@ -87,5 +87,5 @@ def prepare(reference, edited, options=Options(), progress=None, *, cached=None)
     return Preview(endpoints, colored, report, cache)
 
 
-def restore(reference, edited, options=Options(), progress=None):
-    return prepare(reference, edited, options, progress).render()
+def restore(reference, edited, options=Options(), progress=None, *, denoiser=None):
+    return prepare(reference, edited, options, progress, denoiser=denoiser).render()
