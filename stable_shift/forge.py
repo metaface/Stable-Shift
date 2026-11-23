@@ -231,11 +231,14 @@ def process_image(p, pp, settings):
     session.count += 1
     frame = session.count
     options = session.settings.options
+    status = None
 
     def progress(message):
+        nonlocal status
         if shared.state.interrupted or shared.state.skipped:
             raise RestorationInterrupted()
-        shared.state.textinfo = f'Stable Shift image {frame}: {message}'
+        status = f'Stable Shift image {frame}: {message}'
+        shared.state.textinfo = status
 
     try:
         progress('restoring')
@@ -276,6 +279,11 @@ def process_image(p, pp, settings):
         _metadata(p, pp.index, {'status': 'Failed'})
         _fail(p, str(exc))
         raise
+    finally:
+        # Neo keeps this text between loopback passes. Clear only our last
+        # progress message, preserving errors or another extension's status.
+        if shared.state.textinfo == status:
+            shared.state.textinfo = None
 
 
 def finish(p, processed, settings):

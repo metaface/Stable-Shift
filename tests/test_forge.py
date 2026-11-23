@@ -166,6 +166,7 @@ def test_shallow_copies_keep_fixed_anchor_and_batch_metadata_before_saving(host)
         if previous is not None:
             copied.init_images = [previous.copy()]
         proc = host.process_images(copied)
+        assert host.state.textinfo is None  # Ready for the next generation.
         assert proc.index_of_first_image == 1 and len(proc.images) == 3
         assert copied.color_corrections is native_color
         assert 'Other extension: preserved' in proc.infotexts[1]
@@ -208,6 +209,7 @@ def test_hook_failure_stops_feedback_even_when_neo_swallows_exception(host, monk
     assert host.state.interrupted and not proc.images
     assert host.errors == ['SCUNet failed']
     assert 'SCUNet failed' in proc.info
+    assert 'SCUNet failed' in host.state.textinfo
     assert 'Stable Shift status: Failed' in host.saved[0][1]
     directory, = (host.root/'stable-shift').iterdir()
     assert json.loads((directory/'report.json').read_text())['status'] == 'failed'
@@ -215,10 +217,12 @@ def test_hook_failure_stops_feedback_even_when_neo_swallows_exception(host, monk
 
 def test_stop_after_current_batch_finishes_restoration(host):
     host.state.stopping_generation = True
+    host.state.assign_current_image = lambda image: setattr(host.state, 'textinfo', 'Another extension is finishing')
     forge.setup(host.p, host.settings)
     proc = host.process_images(host.p)
     assert len(proc.images) == 1 and proc.images[0].getpixel((0, 0))[0] == 90
     assert not host.state.interrupted
+    assert host.state.textinfo == 'Another extension is finishing'
 
 
 @pytest.mark.parametrize('fails', [False, True])
